@@ -1,0 +1,204 @@
+// =============================================================
+// Police & Thief: Naija Streets — game server
+// One Node.js process serves the web game AND runs online matches.
+//   node server.mjs            (PORT env var, default 8080)
+// Matches are authoritative: the server runs the same rules file the
+// browser uses (../js/sim.js), so catches, rescues and escapes are
+// decided here, not on players' phones.
+// =============================================================
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { WebSocketServer } from 'ws';
+import { newMatch, step, useMatch } from '../js/sim.js';
+import { packState, rosterOf } from '../js/net.js';
+import { MAPS } from '../js/world.js';
+import { CFG } from '../js/world.js';
+
+const __dir = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dir, '..');
+const PORT = +process.env.PORT || 8080;
+const DATA = process.env.DATA_DIR || path.join(__dir, 'data');
+const PROTO = 1;
+fs.mkdirSync(DATA, { recursive: true });
+
+// ---------------------------------------------------------------- static files
+const TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css', '.json':'application/json', '.webmanifest':'application/manifest+json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.mp3':'audio/mpeg' };
+const ALLOWED = /^\/(index\.html|config\.js|sw\.js|manifest\.webmanifest|privacy\.html|js\/[\w-]+\.js|icons\/[\w.-]+|audio\/[\w.-]+\.mp3)$/;
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/health'){ res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ ok:true, rooms: rooms.size, players: clients.size })); return; }
+  if (url.pathname === '/api/leaderboard'){ res.writeHead(200, {'content-type':'application/json','cache-control':'max-age=30'}); res.end(JSON.stringify(topBoard())); return; }
+  let p = url.pathname === '/' ? '/index.html' : url.pathname;
+  if (!ALLOWED.test(p)){ res.writeHead(404); res.end('Not found'); return; }
+  const file = path.join(ROOT, p);
+  fs.readFile(file, (err, buf) => {
+    if (err){ res.writeHead(404); res.end('Not found'); return; }
+    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream',
+      'cache-control': p.endsWith('.html') || p==='/sw.js' ? 'no-cache' : 'public, max-age=3600',
+      'x-content-type-options': 'nosniff' });
+    res.end(buf);
+  });
+});
+
+// ---------------------------------------------------------------- leaderboard
+const BOARD_FILE = path.join(DATA, 'leaderboard.json');
+let board = {};
+try { board = JSON.parse(fs.readFileSync(BOARD_FILE, 'utf8')); } catch {}
+let boardDirty = false;
+setInterval(() => { if (boardDirty){ boardDirty = false; fs.writeFile(BOARD_FILE+'.tmp', JSON.stringify(board), () => fs.rename(BOARD_FILE+'.tmp', BOARD_FILE, () => {})); } }, 30000);
+function topBoard(){
+  return Object.values(board).sort((a,b) => b.pts - a.pts).slice(0, 50).map(r => ({ name:r.name, pts:r.pts, wins:r.wins, games:r.games }));
+}
+function recordResult(c, e, won){
+  const r = board[c.pid] || (board[c.pid] = { name:c.name, pts:0, wins:0, games:0 });
+  r.name = c.name; r.games++; if (won) r.wins++;
+  r.pts += (won?3:1) + e.stats.caps + e.stats.rescues + e.stats.escaped*2;
+  boardDirty = true;
+}
+
+// ---------------------------------------------------------------- players and rooms
+const clients = new Map();     // ws -> client
+const rooms = new Map();       // code -> room
+const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const newCode = () => { let c; do { c = Array.from({length:4}, () => LETTERS[Math.random()*LETTERS.length|0]).join(''); } while (rooms.has(c)); return c; };
+const clean = (s, n=14) => String(s||'').replace(/[^\w .'-]/g,'').trim().slice(0,n) || 'Player';
+function cleanLook(l){ const o={}; if (!l || typeof l!=='object') return null; for (const k of ['skin','outfit','head','eyes','extra','shoes','dance']){ const v=l[k]; o[k] = (typeof v==='number' && v>=0 && v<50) ? v|0 : (typeof v==='string' ? v.replace(/[^\w]/g,'').slice(0,20) : 0); } return o; }
+const send = (c, msg) => { if (c.ws.readyState === 1) c.ws.send(JSON.stringify(msg)); };
+
+function makeRoom(isPublic){
+  const r = { code: newCode(), isPublic, players: [], hostPid: null, state: 'lobby', startAt: 0, G: null, gid: null, tick: 0, overAt: 0, timer: null };
+  rooms.set(r.code, r); return r;
+}
+function lobbyMsg(r){
+  return { t:'lobby', code: r.code, quick: r.isPublic, startsIn: r.startAt ? Math.max(0, Math.ceil((r.startAt-Date.now())/1000)) : null,
+    players: r.players.map(c => ({ name:c.name, tm:c.side, host: c.pid===r.hostPid })) };
+}
+function broadcastLobby(r){ for (const c of r.players) send(c, { ...lobbyMsg(r), you: c.pid===r.hostPid ? 'host' : 'guest' }); }
+function joinRoom(c, r){
+  leaveRoom(c);
+  if (r.players.length >= 8 || r.state !== 'lobby') return send(c, { t:'err', msg: r.state!=='lobby' ? 'That match has already started' : 'That room is full' });
+  r.players.push(c); c.room = r;
+  if (!r.hostPid) r.hostPid = c.pid;
+  if (r.isPublic){
+    // quick match: start 15 s after the first player, or 3 s after the room fills up
+    if (!r.startAt) r.startAt = Date.now() + 15000;
+    if (r.players.length >= 8) r.startAt = Math.min(r.startAt, Date.now() + 3000);
+  }
+  broadcastLobby(r);
+}
+function leaveRoom(c){
+  const r = c.room; if (!r) return;
+  r.players = r.players.filter(x => x !== c); c.room = null;
+  if (r.G){ const e = r.G.ents.find(e => e.peer === c.pid); if (e){ e.ctrl = 'bot'; } }
+  if (!r.players.length){ clearInterval(r.timer); rooms.delete(r.code); return; }
+  if (r.hostPid === c.pid) r.hostPid = r.players[0].pid;
+  if (r.state==='lobby') broadcastLobby(r);
+}
+function quickRoom(){
+  for (const r of rooms.values()) if (r.isPublic && r.state==='lobby' && r.players.length < 8) return r;
+  return makeRoom(true);
+}
+
+// ---------------------------------------------------------------- matches
+function startMatch(r){
+  const slots = r.players.map(c => ({ team: c.side, ctrl:'remote', name: c.name, peer: c.pid }));
+  const ids = Object.keys(MAPS);
+  r.G = newMatch({ slots, diff: 1, map: MAPS[r.map] ? r.map : ids[Math.random()*ids.length|0] });
+  for (const e of r.G.ents){
+    const c = r.players.find(x => x.pid === e.peer);
+    e.look = c && c.looks && c.looks[e.team] ? c.looks[e.team] : null;
+    e.input = null; e.lastPs = 0; e.lastAb = 0;
+  }
+  r.state = 'game'; r.gid = Math.random().toString(36).slice(2,8); r.tick = 0; r.overAt = 0;
+  const roster = rosterOf(r.G);
+  for (const c of r.players){
+    const me = r.G.ents.find(e => e.peer === c.pid);
+    send(c, { t:'start', gid: r.gid, me: me ? me.id : -1, roster, night: r.G.night, map: r.G.map });
+  }
+  clearInterval(r.timer);
+  r.timer = setInterval(() => tickRoom(r), 1000/30);
+}
+function inputFor(e){
+  const i = e.input;
+  if (!i) return { mx:0, my:0 };
+  const out = { pos: i.p, vel: i.v, face: i.f, sprint: !!i.sp, action: !!i.act, press: i.ps > e.lastPs, ability: i.ab > e.lastAb, mx:0, my:0 };
+  e.lastPs = Math.max(e.lastPs, i.ps|0); e.lastAb = Math.max(e.lastAb, i.ab|0);
+  return out;
+}
+function tickRoom(r){
+  if (!r.G) return;
+  useMatch(r.G);
+  for (let i=0; i<2; i++) step(1/60, inputFor);
+  r.tick++;
+  if (r.tick % 2 === 0){
+    const s = packState(r.G);
+    const msg = JSON.stringify({ t:'s', s });
+    for (const c of r.players) if (c.ws.readyState === 1) c.ws.send(msg);
+  }
+  if (r.G.over){
+    if (!r.overAt){
+      r.overAt = Date.now();
+      for (const c of r.players){ const e = r.G.ents.find(e => e.peer === c.pid); if (e) recordResult(c, e, r.G.over.win === e.team); }
+    }
+    if (Date.now() - r.overAt > 4000){
+      clearInterval(r.timer); r.G = null; r.state = 'lobby';
+      if (r.isPublic){ for (const c of r.players.slice()){ c.room = null; send(c, { t:'ended' }); } rooms.delete(r.code); }
+      else { r.startAt = 0; broadcastLobby(r); }
+    }
+  }
+}
+// quick-match countdowns
+setInterval(() => {
+  for (const r of rooms.values()){
+    if (r.state==='lobby' && r.isPublic && r.startAt){
+      if (Date.now() >= r.startAt) startMatch(r); else broadcastLobby(r);
+    }
+  }
+}, 1000);
+
+// ---------------------------------------------------------------- websocket
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+wss.on('connection', (ws) => {
+  const c = { ws, pid: null, name: 'Player', side: 'R', looks: null, room: null, msgs: 0, win: Date.now() };
+  clients.set(ws, c);
+  ws.on('message', (data) => {
+    // simple flood guard: 90 messages a second is plenty for 30 Hz input
+    const now = Date.now(); if (now - c.win > 1000){ c.win = now; c.msgs = 0; }
+    if (++c.msgs > 90) return;
+    let m; try { m = JSON.parse(data); } catch { return; }
+    if (!m || typeof m.t !== 'string') return;
+    switch (m.t){
+      case 'hello':
+        if (m.v !== PROTO) return send(c, { t:'err', msg:'Please refresh: the game was updated' });
+        c.pid = String(m.pid||'').replace(/[^\w-]/g,'').slice(0,40) || Math.random().toString(36).slice(2);
+        c.name = clean(m.name); c.looks = m.looks ? { P: cleanLook(m.looks.P), T: cleanLook(m.looks.T) } : null;
+        send(c, { t:'welcome' }); break;
+      case 'quick': c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; joinRoom(c, quickRoom()); break;
+      case 'create': { c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; const r = makeRoom(false); r.map = typeof m.map==='string' ? m.map : 'random'; r.hostPid = c.pid; joinRoom(c, r); break; }
+      case 'join': { const r = rooms.get(String(m.code||'').toUpperCase()); if (!r || r.isPublic) return send(c, { t:'err', msg:'No room with that code' }); c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; joinRoom(c, r); break; }
+      case 'team': if (c.room && c.room.state==='lobby'){ c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; broadcastLobby(c.room); } break;
+      case 'start': if (c.room && c.room.state==='lobby' && c.room.hostPid===c.pid) startMatch(c.room); break;
+      case 'leave': leaveRoom(c); break;
+      case 'in': {
+        const r = c.room; if (!r || !r.G) return;
+        const e = r.G.ents.find(e => e.peer === c.pid); if (!e) return;
+        const p = Array.isArray(m.p) ? [+m.p[0], +m.p[1]] : null;
+        if (!p || !isFinite(p[0]) || !isFinite(p[1])) return;
+        e.input = { p, v: Array.isArray(m.v) ? [+m.v[0]||0, +m.v[1]||0] : [0,0], f: Array.isArray(m.f) ? [+m.f[0]||0, +m.f[1]||1] : null, sp: m.sp?1:0, act: m.act?1:0, ps: m.ps|0, ab: m.ab|0 };
+        break; }
+      case 'chat': {
+        const r = c.room; if (!r || !r.G) return;
+        const e = r.G.ents.find(e => e.peer === c.pid); if (!e) return;
+        const msg = { t:'chat', id: e.id, i: Math.max(0, Math.min(2, m.i|0)) };
+        for (const o of r.players) send(o, msg);
+        break; }
+      case 'lb': send(c, { t:'lb', rows: topBoard().slice(0, 20) }); break;
+    }
+  });
+  ws.on('close', () => { leaveRoom(c); clients.delete(ws); });
+  ws.on('error', () => {});
+});
+
+server.listen(PORT, () => console.log(`Police & Thief server on http://localhost:${PORT}  (matches last up to ${CFG.matchTime}s)`));
