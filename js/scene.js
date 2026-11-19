@@ -456,18 +456,21 @@ function viewFor(e){
   return v;
 }
 // viewerTeam: which team the local player is on (hiding rules), meId: their entity id
-export function syncEntities(ents, dt, t, meId, viewerTeam, smooth, winTeam){
+export function syncEntities(ents, dt, t, meId, viewerTeam, smooth, winTeam, alpha=1){
   for (const e of ents){
     const v = viewFor(e);
     const vis = e.state !== 'escaped';
     v.ch.root.visible = vis;
     if (!vis) continue;
-    if (smooth && e.id!==meId){ const k=Math.min(1,dt*14); v.x += (e.x-v.x)*k; v.y += (e.y-v.y)*k; }
-    else { v.x = e.x; v.y = e.y; }
+    if (smooth && e.id!==meId){ const k=1-Math.exp(-dt*14); v.x += (e.x-v.x)*k; v.y += (e.y-v.y)*k; }
+    else if (e.px !== undefined && Math.hypot(e.x-e.px, e.y-e.py) < 2){
+      // draw between the last two game ticks, so movement is smooth at any screen refresh rate
+      v.x = e.px + (e.x-e.px)*alpha; v.y = e.py + (e.y-e.py)*alpha;
+    } else { v.x = e.x; v.y = e.y; }
     v.ch.root.position.set(v.x, 0, v.y);
     const tr = Math.atan2(e.fx||0, e.fy||1);
     let d = tr - v.rot; while (d>Math.PI) d-=Math.PI*2; while (d<-Math.PI) d+=Math.PI*2;
-    v.rot += d*Math.min(1, dt*14); v.ch.root.rotation.y = v.rot;
+    v.rot += d*(1-Math.exp(-dt*15)); v.ch.root.rotation.y = v.rot;
     let mode = 'run';
     if (e.state==='arrest') mode='arrest'; else if (e.state==='jailed') mode='jailed';
     else if (e.windup>0) mode='grab'; else if (e.rescueProg>0 || e.escProg>0) mode='work';
@@ -516,18 +519,25 @@ export function syncWorld(Gs, me, t){
 // ------------------------------------------------------------- camera
 const camState = { x: W/2, y: H/2, shake: 0, mode: 'follow', orbit: 0 };
 export function addShake(v){ camState.shake = Math.min(1, camState.shake + v); }
+let camDist = 1;
+export function setCamDist(v){ camDist = v; }
 export function updateCamera(dt, tx, ty, opts={}){
-  const k = Math.min(1, dt*6);
-  camState.x += (tx - camState.x)*k; camState.y += (ty - camState.y)*k;
+  // look a little ahead of where you're running, and ease into it
+  if (camState.px === undefined || Math.hypot(tx-camState.px, ty-camState.py) > 3){ camState.px = tx; camState.py = ty; camState.ax = 0; camState.ay = 0; }
+  const vx = dt > 0 ? (tx-camState.px)/dt : 0, vy = dt > 0 ? (ty-camState.py)/dt : 0; camState.px = tx; camState.py = ty;
+  const ka = 1-Math.exp(-dt*2.5);
+  camState.ax += (Math.max(-2.2, Math.min(2.2, vx*.3)) - camState.ax)*ka; camState.ay += (Math.max(-2.2, Math.min(2.2, vy*.3)) - camState.ay)*ka;
+  const k = 1-Math.exp(-dt*8);
+  camState.x += (tx + camState.ax - camState.x)*k; camState.y += (ty + camState.ay - camState.y)*k;
   camState.shake = Math.max(0, camState.shake - dt*2.2);
   const sh = (opts.shakeOn===false?0:1) * camState.shake*camState.shake * .6;
   const ox = (Math.random()-.5)*sh, oz = (Math.random()-.5)*sh;
   const lx = Math.max(3.5, Math.min(W-3.5, camState.x)), lz = Math.max(7.5, Math.min(H-3, camState.y - 2));
-  camera.position.set(lx + ox, 19, lz + 12 + oz);
+  camera.position.set(lx + ox, 19*camDist, lz + 12*camDist + oz);
   camera.lookAt(lx, 0, lz);
   sun.position.set(lx+8, 22, lz+6); sun.target.position.set(lx, 0, lz); sun.target.updateMatrixWorld();
 }
-export function snapCamera(x,y){ camState.x=x; camState.y=y; }
+export function snapCamera(x,y){ camState.x=x; camState.y=y; camState.px=undefined; }
 // showroom: orbit around a point close up
 export function showroomCamera(dt, x, z, dist=4.2, height=1.6, angle=0){
   camera.position.set(x + Math.sin(angle)*dist, height+1.1, z + Math.cos(angle)*dist);
@@ -601,3 +611,24 @@ export function project(x, y, h){
   const v = new THREE.Vector3(x, h, y).project(camera);
   return [ (v.x*.5+.5)*innerWidth, (-v.y*.5+.5)*innerHeight, v.z < 1 ];
 }
+
+// ------------------------------------------------------------- tutorial target marker
+let guide = null;
+export function setGuide(x, y){
+  if (!guide){
+    guide = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.RingGeometry(.75,1.0,32), new THREE.MeshBasicMaterial({ color:0xffd84d, transparent:true, opacity:.9, depthWrite:false }));
+    ring.rotation.x = -Math.PI/2; ring.position.y = .06; guide.add(ring);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(.35,.7,4), new THREE.MeshBasicMaterial({ color:0xffd84d }));
+    cone.rotation.x = Math.PI; cone.position.y = 2.6; guide.add(cone); guide.userData = { ring, cone };
+    scene.add(guide);
+  }
+  if (x === null || x === undefined){ guide.visible = false; return; }
+  guide.visible = true; guide.position.set(x, 0, y);
+}
+export function updateGuide(t){
+  if (!guide || !guide.visible) return;
+  const s = 1 + .12*Math.sin(t*6); guide.userData.ring.scale.set(s,s,s);
+  guide.userData.cone.position.y = 2.5 + Math.abs(Math.sin(t*4))*.5; guide.userData.cone.rotation.y = t*2;
+}
+export function guidePos(){ return guide && guide.visible ? { x: guide.position.x, y: guide.position.z } : null; }

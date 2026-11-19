@@ -66,3 +66,10 @@ Costs are rough estimates, not quotes. Check current prices before you pay for a
 - [ ] **Record the theme song.** `audio/theme.mp3` is the instrumental and `SONG.md` has the lyrics, chords and tune. Book a singer for an hour to put the chorus and two verses over it, or hand both files to a producer to replay with live guitar and shekere.
 - [ ] **Playtest the new street.** Football (kick the ball, score for ₦30), six shops that sell jollof, pure water, suya, glucose, kunu and small chops for ₦ notes picked up in the match, and the daily missions tied to them. Watch whether new players find the shops without being told.
 - [ ] **Check the busy street on a cheap phone.** Shopkeepers, chickens and smoke switch off when Graphics is LOW.
+
+## 7. Money and marketing
+
+- [ ] Paystack account and keys, then a test purchase end to end (MONETIZATION.md, section 2).
+- [ ] Pick ads: a portal (Poki or CrazyGames) or Google H5 Games Ads on your own site (MONETIZATION.md, section 1).
+- [ ] Swap the QR code on the poster and flyer for your own domain once the game is on it.
+- [ ] Post the promo video (`media/police-thief-promo.mp4`) on TikTok, Reels, YouTube Shorts and WhatsApp status.

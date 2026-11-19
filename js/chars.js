@@ -36,6 +36,46 @@ function plaidTex(){ return canvasTex('ggm',64,64,(g,w,h)=>{ g.fillStyle='#f3f3f
 const geo = {};
 const G = (k, f) => geo[k] || (geo[k] = f());
 
+function agbadaTex(){ return canvasTex('agbada',128,128,(g,w,h)=>{ g.fillStyle='#7a1f3d'; g.fillRect(0,0,w,h);
+  g.fillStyle='rgba(255,255,255,.05)'; for (let y=0;y<h;y+=4) g.fillRect(0,y,w,1);
+  g.strokeStyle='#e9c25a'; g.lineWidth=3; for (let k=0;k<3;k++){ g.beginPath(); g.arc(w/2, -6+k*7, 34+k*8, .2*Math.PI, .8*Math.PI); g.stroke(); }
+  g.fillStyle='#e9c25a'; for (let x=10;x<w;x+=18){ g.beginPath(); g.arc(x, h-10, 3, 0, 7); g.fill(); } }); }
+// "POLICE" printed across the back of the shirt, so you can tell officers apart from above
+function backTex(){ return canvasTex('pback', 256, 64, (g, w, h) => { g.clearRect(0,0,w,h); g.fillStyle = '#f2f2f2'; g.font = '900 46px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('POLICE', w/2, h/2+2); }); }
+function tagTex(){ return canvasTex('ptag', 128, 32, (g, w, h) => { g.fillStyle = '#f4f4f4'; g.fillRect(0,0,w,h); g.fillStyle = '#111'; g.font = '900 20px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('OFFICER', w/2, h/2+1); }); }
+// A generic five-point star badge. Deliberately not the real force crest.
+function starShape(r1, r2){ const s = new THREE.Shape(); for (let i=0;i<10;i++){ const r = i%2 ? r2 : r1, a = i/10*Math.PI*2 + Math.PI/2; const x = Math.cos(a)*r, y = Math.sin(a)*r; i ? s.lineTo(x,y) : s.moveTo(x,y); } return s; }
+// Uniform details shared by every police outfit, merged into one mesh per material so it stays cheap:
+// pockets with flaps, button line, collar, epaulettes, sergeant's chevrons, belt and buckle,
+// name tag, badge, radio on the shoulder.
+const UNI = {};
+function uniformGeo(){
+  if (UNI.ok) return UNI;
+  const at = (g, x, y, z, rx=0, ry=0, rz=0) => { g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); return g.toNonIndexed(); };
+  const B = (w,h,d) => new THREE.BoxGeometry(w,h,d);
+  const cloth = [], silver = [], black = [], white = [];
+  for (const s of [-1,1]){
+    cloth.push(at(B(.15,.13,.03), .12*s, .42, .262));                       // pocket
+    cloth.push(at(B(.16,.045,.04), .12*s, .49, .27));                       // pocket flap
+    silver.push(at(new THREE.SphereGeometry(.014,6,4), .12*s, .475, .292)); // flap button
+    cloth.push(at(B(.13,.07,.05), .07*s, .66, .17, -.5, 0, .55*s));         // collar point
+    cloth.push(at(B(.13,.035,.2), .23*s, .66, 0, 0, 0, -.38*s));            // epaulette
+    silver.push(at(new THREE.SphereGeometry(.018,6,4), .19*s, .69, .07));   // epaulette button
+  }
+  for (let i=0;i<4;i++) silver.push(at(new THREE.SphereGeometry(.016,6,4), 0, .58-i*.11, .275));
+  black.push(at(new THREE.CylinderGeometry(.287,.287,.075,18), 0, .1, 0));
+  silver.push(at(B(.09,.065,.025), 0, .1, .29));
+  white.push(at(B(.13,.035,.012), -.12, .35, .272));                        // name tag sits under the pocket
+  black.push(at(B(.07,.11,.04), -.22, .62, .1));                            // radio
+  black.push(at(new THREE.CylinderGeometry(.007,.007,.14,4), -.2, .73, .1));
+  UNI.cloth = mergeGeometries(cloth); UNI.silver = mergeGeometries(silver); UNI.black = mergeGeometries(black); UNI.white = mergeGeometries(white);
+  // three chevrons on each upper sleeve
+  const chev = [];
+  for (let k=0;k<3;k++) for (const s of [-1,1]){ const g = B(.075,.016,.012); g.rotateZ(.55*s); g.translate(.028*s, -.07-k*.035, 0); chev.push(g.toNonIndexed()); }
+  UNI.chev = mergeGeometries(chev);
+  UNI.star = new THREE.ExtrudeGeometry(starShape(.05,.022), { depth:.012, bevelEnabled:false });
+  UNI.ok = true; return UNI;
+}
 function outfitMat(team, id){
   const list = CATALOG[team].outfit, o = list.find(x=>x.id===id) || list[0];
   if (team==='P'){
@@ -44,6 +84,7 @@ function outfitMat(team, id){
     return { shirt: toon(c), pants: toon(c.clone().multiplyScalar(.75)) };
   }
   if (o.pattern==='ankara') return { shirt: toon(0xffffff,{map:ankaraTex()}), pants: toon(0x1f2a44) };
+  if (o.pattern==='agbada') return { shirt: toon(0xffffff,{map:agbadaTex()}), pants: toon(0x5a1630) };
   if (o.pattern==='aso') return { shirt: toon(0xffffff,{map:asoTex()}), pants: toon(0x2a1240) };
   if (o.jersey) return { shirt: toon(0xffffff,{map:jerseyTex()}), pants: toon(0xffffff) };
   const t = stripeTex(o.a,o.b);
@@ -92,20 +133,31 @@ export function makeCharacter(team, look){
   const smile = mesh(G('smile',()=>new THREE.TorusGeometry(.07,.016,6,12,Math.PI)), dark, 0,-.1,.285, head); smile.rotation.z = Math.PI;
   const cheekM = M(toon(0xd9776b,{transparent:true,opacity:.45}));
   for (const s of [-1,1]) mesh(G('cheek',()=>new THREE.SphereGeometry(.045,8,6)), cheekM, .19*s,-.05,.24, head).scale.set(1,.6,.4);
-  if (team==='P'){
-    mesh(G('belt',()=>new THREE.CylinderGeometry(.285,.285,.07,16)), dark, 0,.1,0, torso);
-    mesh(G('badge',()=>new THREE.BoxGeometry(.09,.1,.03)), gold, -.12,.45,.26, torso);
+  if (team==='P' && !look.civ){
+    const U = uniformGeo();
+    const oc = (CATALOG.P.outfit.find(x => x.id===look.outfit) || CATALOG.P.outfit[0]).col;
+    const base = new THREE.Color(oc==='camo' ? '#3b4a25' : oc), light = base.getHSL({}).l > .55;
+    const trim = M(toon(base.clone().multiplyScalar(light ? .8 : 1.35).lerp(new THREE.Color(light ? 0x000000 : 0x2a2a2a), light ? 0 : .15)));
+    const silverM = M(toon(0xd8dde3, { emissive:0x1a1a1a })), chevM = M(toon(light ? 0x1b1b22 : 0xf2f2f2));
+    mesh(U.cloth, trim, 0,0,0, torso); mesh(U.silver, silverM, 0,0,0, torso); mesh(U.black, dark, 0,0,0, torso); mesh(U.white, white, 0,0,0, torso);
+    mesh(U.star, silverM, .12,.41,.272, torso);
+    const back = mesh(G('pback',()=>new THREE.PlaneGeometry(.4,.1)), M(new THREE.MeshBasicMaterial({ map: backTex(), transparent:true, depthWrite:false })), 0,.46,-.285, torso); back.rotation.y = Math.PI; back.castShadow = false;
+    const tag = mesh(G('ptag',()=>new THREE.PlaneGeometry(.12,.03)), M(new THREE.MeshBasicMaterial({ map: tagTex() })), -.12,.35,.279, torso); tag.castShadow = false;
+    for (const sh of arms){ const c = mesh(U.chev, chevM, 0,0,0, sh); c.position.set((sh.position.x>0?1:-1)*.083, 0, 0); c.rotation.y = (sh.position.x>0?1:-1)*Math.PI/2; }
   }
   // headwear
   const hw = look.head;
-  const capCol = team==='P' ? (look.outfit==='p_white'?0xf2f2f2:0x0e1f45) : 0x111111;
+  const capCol = team==='P' ? (look.outfit==='p_white'?0xf2f2f2:look.outfit==='p_navy'?0x0e1f45:0x16171b) : 0x111111;
   if (hw==='cap' || hw==='goldcap'){
     const c = M(toon(hw==='goldcap' ? 0xc79a1e : capCol));
     mesh(G('capTop',()=>new THREE.CylinderGeometry(.34,.3,.14,18)), c, 0,.27,0, head);
     const brim = mesh(G('brim',()=>new THREE.CylinderGeometry(.2,.2,.03,16,1,false,0,Math.PI)), dark, 0,.2,.2, head); brim.rotation.y = -Math.PI/2;
-    mesh(G('capBadge',()=>new THREE.BoxGeometry(.08,.07,.02)), gold, 0,.28,.32, head);
-  } else if (hw==='beret'){
-    const b = mesh(G('beret',()=>new THREE.SphereGeometry(.33,14,8)), M(toon(0x8a1c2b)), .04,.24,-.02, head); b.scale.set(1,.35,1); b.rotation.z=-.25;
+    if (team==='P'){ mesh(G('capBand',()=>new THREE.CylinderGeometry(.305,.305,.06,18)), M(toon(hw==='goldcap' ? 0x7a5a10 : 0x101010)), 0,.22,0, head); mesh(uniformGeo().star, M(toon(hw==='goldcap' ? 0xf2c53d : 0xd8dde3, { emissive:0x1a1a1a })), 0,.24,.31, head); }
+    else mesh(G('capBadge',()=>new THREE.BoxGeometry(.08,.07,.02)), gold, 0,.28,.32, head);
+  } else if (hw==='beret' || hw==='pberet'){
+    const b = mesh(G('beret',()=>new THREE.SphereGeometry(.33,14,8)), M(toon(hw==='pberet' ? 0x16171b : 0x8a1c2b)), .04,.24,-.02, head); b.scale.set(1,.35,1); b.rotation.z=-.25;
+    mesh(G('beretBand',()=>new THREE.TorusGeometry(.31,.022,6,20)), M(toon(0x101010)), 0,.15,0, head).rotation.x = Math.PI/2;
+    if (team==='P'){ const st = mesh(uniformGeo().star, M(toon(0xd8dde3, { emissive:0x1a1a1a })), -.13,.2,.27, head); st.scale.setScalar(.9); st.rotation.y = -.35; }
   } else if (hw==='helmet'){
     mesh(G('helm',()=>new THREE.SphereGeometry(.35,18,10,0,Math.PI*2,0,Math.PI/2)), M(toon(0x23262e)), 0,.04,0, head);
     mesh(G('visor',()=>new THREE.BoxGeometry(.5,.16,.04)), M(toon(0x9fd3ff,{transparent:true,opacity:.55})), 0,.04,.31, head);
@@ -125,8 +177,8 @@ export function makeCharacter(team, look){
   } else if (hw==='durag'){
     mesh(G('dur',()=>new THREE.SphereGeometry(.325,16,10,0,Math.PI*2,0,Math.PI/1.9)), M(toon(0x2b2f8f)), 0,.02,0, head);
     mesh(G('durT',()=>new THREE.BoxGeometry(.12,.28,.03)), M(toon(0x2b2f8f)), 0,-.12,-.32, head);
-  } else if (hw==='gele'){
-    const gm = M(toon(look.gele || '#f4c430'));
+  } else if (hw==='gele' || hw==='gele_gold'){
+    const gm = M(toon(hw==='gele_gold' ? '#e2b33c' : (look.gele || '#f4c430')));
     const g1 = mesh(G('gele1',()=>new THREE.SphereGeometry(.36,14,8)), gm, 0,.22,-.02, head); g1.scale.set(1.25,.5,1.05);
     const g2 = mesh(G('gele2',()=>new THREE.ConeGeometry(.3,.42,10)), gm, .08,.42,-.05, head); g2.rotation.z = -.5; g2.scale.set(1.3,1,.6);
   } else if (hw==='straw'){

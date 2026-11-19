@@ -63,3 +63,13 @@ Current settings: bots-vs-bots, police win about 45–55% of games, rounds last 
 - The herdsman and his cattle walk the line given by `herd`; players have to go round them. Speed and how often they pass are `herdSpeed` and `herdEvery` in `CFG`.
 - Police catch automatically (`autoCatch` in `CFG`). Set it to `false` to bring back the CATCH button.
 - `node tools/balance.mjs 100 market` runs the bot check on one location (`street`, `market`, `school`, `church`).
+
+## Controls, tutorial and file layout
+
+- `css/style.css` holds every style; `index.html` is markup only.
+- `js/controls.js` is the joystick (appears under your thumb, eFootball style), the on-screen buttons, keyboard keys, and the Controls tab in Settings (stick type and size, sprint style, hands, button size, see-through, vibration, drag-to-arrange layout, key binding).
+- `js/tutorial.js` is the one-minute guided practice offered on first launch, and from More > Tutorial.
+
+## Money
+
+Ads and real-money purchases (Paystack) are in the code but switched off. `MONETIZATION.md` lists every line (search for `[AD]` and `[PAY]`), how to switch them on, and other ways to earn.

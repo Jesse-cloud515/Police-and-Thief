@@ -6,6 +6,9 @@ import { G, newMatch, step, CHAT, LINES, REASONS, nearestCapturable, countJailed
 import * as M from './meta.js';
 import * as S from './scene.js';
 import { ADS } from './ads.js';
+import { initControls, readInput, resetMatch, applyControls, renderControlSettings, vibrate, CTL } from './controls.js';
+import { createTutorial } from './tutorial.js';
+import { initStore, openStore } from './store.js';
 import { NET, initNet, newCode, openRoom, leaveRoom, setPresence, livePeers, peerPresence, hostPresence, packState, rosterOf, applySnapshot, SRV, connectServer, srvSend, serverUrl } from './net.js';
 
 const $ = id => document.getElementById(id);
@@ -28,10 +31,12 @@ initNet().then(ok => { if (mode==='online') renderOnline(); });
 M.attachCloud().then(ok => { if (ok){ S.showroom(SAVE().looks); refreshHome(); } });
 setTimeout(() => { $('loading').classList.add('hidden'); }, 300);
 setTimeout(() => {   // after the whole module has loaded
-  applyQuality(); ADS.init();
+  applyQuality(); ADS.setNoAds(SAVE().noAds); ADS.init();   // [AD] ads start here (settings in config.js)
   if (MAPS[SAVE().map]) useMap(SAVE().map);
   goHome();
-  if (!SAVE().seenHow){ show('how'); SAVE().seenHow = true; M.persist(); }
+  applyCam();
+  // first visit: offer the tutorial instead of a wall of text
+  if (!SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
 }, 0);
 
 // ------------------------------------------------------------------ audio
@@ -111,7 +116,7 @@ function musicTick(){
 }
 function startMusic(){ if (!AC) return; loadTheme(); nextBeat = Math.max(nextBeat, AC.currentTime+.05); clearInterval(musicTimer); musicTimer = setInterval(musicTick, 50); }
 document.addEventListener('pointerdown', () => { const was = !AC; initAudio(); if (was) startMusic(); }, { capture:true });
-const buzz = ms => { try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} };
+const buzz = ms => vibrate(ms);
 
 // ------------------------------------------------------------------ toast / announce / feed
 let toastT = 0;
@@ -138,24 +143,27 @@ function setMode(m){
   checkRotate();
 }
 function goHome(){
+  TUT.stop(); ADS.hideBanner($('resBanner'));
   S.clearViews(); S.setNight(false); S.showroom(SAVE().looks); MC = null; setMode('home');
 }
 function refreshHome(){
   const s = SAVE(); buildMapSeg();
   $('hName').textContent = s.name; $('hAv').firstChild.nodeValue = s.name[0].toUpperCase(); $('hLv').textContent = s.level;
-  $('hRank').textContent = `${M.rankName('P',s.level)} · ${M.rankName('T',s.level)}`;
   $('hXp').style.width = Math.round(s.xp/M.xpForLevel(s.level)*100)+'%';
   $('hCoins').textContent = s.coins; $('wCoins').textContent = s.coins;
   document.querySelectorAll('#sideSeg button').forEach(b => b.classList.toggle('on', b.dataset.side===s.side));
+  // daily bonus: a single gold chip on the start page, and the streak line in More
+  const gift = $('giftChip'); gift.classList.toggle('hidden', s.streak.claimedToday);
+  gift.textContent = `🎁 Day ${s.streak.count} bonus · Claim ₦${M.streakReward()}`;
+  gift.onclick = () => { const r=M.claimStreak(); sfx('coin'); toast(`+₦${r} streak bonus!`); refreshHome(); };
   const st = $('streak'); st.innerHTML='';
-  const label = document.createElement('span'); label.textContent = `🔥 Day ${s.streak.count} streak`; st.appendChild(label);
-  if (!s.streak.claimedToday){ const b=document.createElement('button'); b.className='btn gold'; b.style.cssText='padding:6px 10px;font-size:12px;margin-left:auto'; b.textContent=`Claim ₦${M.streakReward()}`; b.onclick=()=>{ const r=M.claimStreak(); sfx('coin'); toast(`+₦${r} streak bonus!`); refreshHome(); }; st.appendChild(b); }
-  else { const d=document.createElement('span'); d.className='tag'; d.style.marginLeft='auto'; d.textContent='Come back tomorrow for more ₦'; st.appendChild(d); }
-  const ready = M.achReady(); $('achDot').textContent = ready ? String(ready) : '';
-  // one line on the home screen; the full list opens when tapped
-  { const ml = $('misLine'), list = s.missions.list, claim = list.filter(m => m.done && !m.claimed).length, left = list.find(m => !m.done);
-    ml.innerHTML = ''; ml.appendChild(el('span', null, claim ? `🎁 ${claim} mission reward${claim>1?'s':''} to claim` : left ? `📋 ${left.text} (${left.prog}/${left.goal})` : '📋 All missions done for today'));
-    ml.appendChild(el('b', null, claim ? 'CLAIM ›' : 'MISSIONS ›')); }
+  st.appendChild(el('span', null, `🔥 Day ${s.streak.count} streak`));
+  st.appendChild(el('span','tag', s.streak.claimedToday ? 'Come back tomorrow for more ₦' : `₦${M.streakReward()} waiting on the home screen`)).style.marginLeft='auto';
+  const ready = M.achReady(); $('achDot').textContent = ready ? `${ready} to claim` : '';
+  const list = s.missions.list, claim = list.filter(m => m.done && !m.claimed).length, left = list.filter(m => !m.done).length;
+  $('misNote').textContent = claim ? `${claim} to claim` : left ? `${left} left today` : 'All done';
+  const dot = claim + ready + (M.passReady ? M.passReady() : 0);
+  $('moreDot').textContent = dot ? String(dot) : ''; $('moreDot').classList.toggle('on', !!dot);
   const mis = $('missions'); mis.innerHTML = '<div class="bung" style="font-size:13px;color:#ffd84d;margin-bottom:4px">DAILY MISSIONS</div>';
   s.missions.list.forEach((m,i) => {
     const r = document.createElement('div'); r.className='mis';
@@ -168,16 +176,37 @@ function refreshHome(){
     mis.appendChild(r);
   });
 }
-document.querySelectorAll('#sideSeg button').forEach(b => b.onclick = () => { SAVE().side = b.dataset.side; M.persist(); refreshHome(); sfx('tap'); });
+document.querySelectorAll('#sideSeg button').forEach(b => b.onclick = () => { SAVE().side = b.dataset.side; M.persist(); buildPickers(); buildMapSeg(); sfx('tap'); });
 $('bPlay').onclick = () => startSolo(SAVE().side);
 $('bWard').onclick = () => { wardTeam='P'; setMode('ward'); };
 $('bOnline').onclick = () => setMode('online');
-$('bHow').onclick = () => show('how');
-$('misLine').onclick = () => show('misDlg');
+$('bHow').onclick = () => { show('moreDlg', false); show('how'); };
+$('bStore').onclick = () => { show('moreDlg', false); openStore(); };
+$('hCoinBtn').onclick = () => openStore();
+initStore({ toast: t => toast(t), sfx: n => sfx(n), refresh: () => { ADS.setNoAds(SAVE().noAds); refreshHome(); if (mode==='ward') renderWard(); } });
+$('bMis').onclick = () => { show('moreDlg', false); show('misDlg'); };
+$('bMore').onclick = () => { refreshHome(); show('moreDlg'); };
+$('moreOk').onclick = () => show('moreDlg', false);
+$('bTut').onclick = () => { show('moreDlg', false); startTutorial(); };
+$('firstGo').onclick = () => { show('firstDlg', false); startTutorial(); };
+$('firstSkip').onclick = () => show('firstDlg', false);
+$('pickSide').onclick = () => { buildPickers(); show('pickDlg'); };
+$('pickMap').onclick = () => { buildPickers(); show('pickDlg'); };
+$('pickOk').onclick = () => { show('pickDlg', false); refreshHome(); };
 $('misOk').onclick = () => show('misDlg', false);
-$('bPass').onclick = () => { renderPass(); show('passDlg'); };
-$('bAch').onclick = () => { renderAch(); show('achDlg'); };
-$('bSet').onclick = () => { syncSettings(); show('setDlg'); };
+$('bPass').onclick = () => { show('moreDlg', false); renderPass(); show('passDlg'); };
+$('bAch').onclick = () => { show('moreDlg', false); renderAch(); show('achDlg'); };
+$('bSet').onclick = () => { show('moreDlg', false); openSettings('ctl'); };
+function openSettings(tab){
+  syncSettings(); renderControlSettings($('setCtl'));
+  document.querySelectorAll('#setTabs button').forEach(b => b.classList.toggle('on', b.dataset.tab===tab));
+  show('setCtl', tab==='ctl'); show('setGame', tab==='game'); show('setDlg');
+}
+document.querySelectorAll('#setTabs button').forEach(b => b.onclick = () => openSettings(b.dataset.tab));
+$('setDone').onclick = () => show('setDlg', false);
+const CAMS = { near:[.82,'CLOSE'], normal:[1,'NORMAL'], far:[1.2,'FAR'] };
+function applyCam(){ S.setCamDist((CAMS[SAVE().settings.cam]||CAMS.normal)[0]); }
+$('sCam').onclick = () => { const st=SAVE().settings, o=['near','normal','far']; st.cam = o[(o.indexOf(st.cam||'normal')+1)%3]; M.persist(); applyCam(); syncSettings(); };
 function renderPass(){
   const tier = M.passTier(), into = SAVE().pass.xp - tier*M.PASS_XP;
   $('passHead').textContent = `${M.PASS_SEASON} · Tier ${tier}/${M.PASS_TIERS}` + (tier<M.PASS_TIERS ? ` · ${M.PASS_XP-into} XP to next` : ' · Complete!');
@@ -206,6 +235,7 @@ function renderAch(){
 function syncSettings(){
   const st = SAVE().settings;
   $('sQual').textContent = 'Graphics: ' + ({auto:'AUTO', high:'HIGH', low:'LOW (faster)'}[st.quality]||'AUTO');
+  $('sCam').textContent = 'Camera: ' + (CAMS[st.cam]||CAMS.normal)[1];
   $('sSound').textContent = 'Sound: ' + (st.sound?'ON':'OFF'); $('sMusic').textContent = 'Music: ' + (st.music?'ON':'OFF'); $('sShake').textContent = 'Screen shake: ' + (st.shake?'ON':'OFF');
 }
 $('sQual').onclick = () => { const st=SAVE().settings; st.quality = st.quality==='auto' ? 'high' : st.quality==='high' ? 'low' : 'auto'; M.persist(); applyQuality(); syncSettings(); };
@@ -235,17 +265,18 @@ function renderWard(){
   for (const it of items){
     const st = M.itemState(wardTeam, wardCat, it);
     const eq = look[wardCat] === it.id;
-    const b = document.createElement('button'); b.className = 'item' + (eq?' eq':'') + (st==='locked'?' locked':'') + (st==='poor'?' poor':'');
+    const b = document.createElement('button'); b.className = 'item' + (eq?' eq':'') + (st==='locked'?' locked':'') + (st==='poor'?' poor':'') + (st==='store'?' store':'');
     if (it.sw){ const sw=document.createElement('div'); sw.className='sw'; sw.style.background=it.sw; b.appendChild(sw); }
-    else if (it.col || it.a || it.pattern){ const sw=document.createElement('div'); sw.className='sw'; sw.style.background = it.pattern ? 'repeating-linear-gradient(45deg,#e8762b 0 6px,#1b4f9c 6px 12px,#f6c625 12px 16px)' : it.col==='camo' ? 'repeating-linear-gradient(45deg,#5d6b3a 0 6px,#3b4a25 6px 12px)' : it.a ? `repeating-linear-gradient(0deg,${it.a} 0 5px,${it.b} 5px 10px)` : it.col; b.appendChild(sw); }
+    else if (it.col || it.a || it.pattern){ const sw=document.createElement('div'); sw.className='sw'; sw.style.background = it.pattern==='agbada' ? 'radial-gradient(circle at 50% 0,#e9c25a 0 30%,#7a1f3d 32%)' : it.pattern ? 'repeating-linear-gradient(45deg,#e8762b 0 6px,#1b4f9c 6px 12px,#f6c625 12px 16px)' : it.col==='camo' ? 'repeating-linear-gradient(45deg,#5d6b3a 0 6px,#3b4a25 6px 12px)' : it.a ? `repeating-linear-gradient(0deg,${it.a} 0 5px,${it.b} 5px 10px)` : it.col; b.appendChild(sw); }
     else if (wardCat==='dance'){ const sw=document.createElement('div'); sw.textContent='💃'; sw.style.fontSize='22px'; b.appendChild(sw); }
     if (it.name){ const n=document.createElement('div'); n.textContent=it.name; b.appendChild(n); }
     if (it.name && wardCat!=='skin' && wardCat!=='shoes'){ const [rn, rc] = M.rarity(it); const r=document.createElement('div'); r.className='rar'; r.textContent=rn; r.style.color=rc; b.appendChild(r); if (!eq) b.style.borderColor = rc+'55'; }
     const p = document.createElement('div'); p.className='pr';
-    p.textContent = eq ? 'EQUIPPED' : st==='owned' ? '' : st==='locked' ? `🔒 Level ${it.lvl}` : st==='pass' ? `🎟 Pass tier ${it.pass}` : `₦${it.price}`;
+    p.textContent = eq ? 'EQUIPPED' : st==='owned' ? '' : st==='locked' ? `🔒 Level ${it.lvl}` : st==='pass' ? `🎟 Pass tier ${it.pass}` : st==='store' ? '🛒 Store pack' : `₦${it.price}`;
     b.appendChild(p);
     b.onclick = () => {
       if (st==='pass'){ toast(`Unlock it at Street Pass tier ${it.pass}`); return; }
+      if (st==='store'){ openStore(); return; }   // [PAY] sold in the Store
       if (st==='locked'){ toast(`Reach level ${it.lvl} to unlock`); return; }
       if (st==='poor'){ toast(`You need ₦${it.price-s.coins} more. Win games and finish missions!`); return; }
       if (st==='buy'){ if (!M.buy(it)) return; sfx('coin'); toast(`Bought ${it.name}!`); }
@@ -392,37 +423,13 @@ NET.onChange = (why) => {
 };
 
 // ------------------------------------------------------------------ input
-const keys = {}, ctl = { held:false, press:false, ab:false, run:false };
-const J = { on:false, id:null, ox:0, oy:0, dx:0, dy:0 };
+SAVE().settings.ctl = SAVE().settings.ctl || {};
+initControls({ get: () => SAVE().settings.ctl, save: () => M.persist(), isPlaying: () => mode==='match' });
 addEventListener('keydown', e => {
-  if (e.code==='Escape' && mode==='match'){ togglePause(); return; }
+  if (e.code==='Escape' && mode==='match' && !CTL.editing){ togglePause(); return; }
   if (mode!=='match') return;
-  if ((e.code==='Space'||e.code==='KeyE') && !e.repeat) ctl.press = true;
-  if (e.code==='KeyQ' && !e.repeat) ctl.ab = true;
   if (['Digit1','Digit2','Digit3'].includes(e.code)) quickChat(+e.code.slice(-1)-1);
-  keys[e.code] = true; if (e.code.startsWith('Arrow')||e.code==='Space') e.preventDefault();
 });
-addEventListener('keyup', e => keys[e.code] = false);
-addEventListener('blur', () => { for (const k in keys) keys[k]=false; ctl.held=false; J.on=false; });
-const jz = $('joyZone');
-jz.addEventListener('pointerdown', e => { e.preventDefault(); if (J.on) return; J.on=true; J.id=e.pointerId; J.ox=e.clientX; J.oy=e.clientY; J.dx=J.dy=0; jz.setPointerCapture(e.pointerId); });
-jz.addEventListener('pointermove', e => { if (!J.on || e.pointerId!==J.id) return; let dx=(e.clientX-J.ox)/50, dy=(e.clientY-J.oy)/50; const m=Math.hypot(dx,dy); if (m>1){ J.ox += (dx/m)*(m-1)*50; J.oy += (dy/m)*(m-1)*50; dx/=m; dy/=m; } J.dx=dx; J.dy=dy; });
-const jEnd = e => { if (e.pointerId===J.id){ J.on=false; J.dx=J.dy=0; } };
-jz.addEventListener('pointerup', jEnd); jz.addEventListener('pointercancel', jEnd);
-const ba = $('bAct');
-ba.addEventListener('pointerdown', e => { e.preventDefault(); ctl.held=true; ctl.press=true; try{ ba.setPointerCapture(e.pointerId); }catch(_){} });
-ba.addEventListener('pointerup', () => ctl.held=false); ba.addEventListener('pointercancel', () => ctl.held=false);
-$('bAbil').addEventListener('pointerdown', e => { e.preventDefault(); ctl.ab = true; });
-$('bRun').addEventListener('pointerdown', e => { e.preventDefault(); ctl.run = !ctl.run; $('bRun').classList.toggle('on', ctl.run); });
-function readInput(){
-  let mx=0, my=0;
-  if (keys.KeyW||keys.ArrowUp) my-=1; if (keys.KeyS||keys.ArrowDown) my+=1;
-  if (keys.KeyA||keys.ArrowLeft) mx-=1; if (keys.KeyD||keys.ArrowRight) mx+=1;
-  if (J.on){ mx=J.dx; my=J.dy; }
-  const inp = { mx, my, sprint: !!(keys.ShiftLeft||keys.ShiftRight||ctl.run), action: !!(keys.Space||keys.KeyE||ctl.held), press: ctl.press, ability: ctl.ab };
-  ctl.press = false; ctl.ab = false;
-  return inp;
-}
 let chatSeq = 0;
 function quickChat(i){
   if (!MC) return;
@@ -438,22 +445,40 @@ function buildChat(team){
 
 // ------------------------------------------------------------------ match setup
 function prepViews(ents){
-  for (const e of ents) if (!e.look) e.look = M.randomLook(e.team);
+  for (const e of ents) if (!e.look) e.look = M.botLook(e.team);
 }
 // ---- locations
 function useMap(id){ if (!MAPS[id]) id = 'street'; if (MAP.id !== id){ setMap(id); S.rebuildWorld(); } }
 function pickMap(){ const m = SAVE().map; return MAPS[m] ? m : MAP_IDS[Math.random()*MAP_IDS.length|0]; }
 function buildMapSeg(){
-  const seg = $('mapSeg'); seg.innerHTML = '';
-  for (const id of [...MAP_IDS, 'random']){
-    const b = el('button', null, id==='random' ? '🎲 Any' : `${MAPS[id].icon} ${MAPS[id].short || MAPS[id].name}`); b.title = id==='random' ? 'Random' : MAPS[id].name;
-    b.classList.toggle('on', (SAVE().map||'street')===id);
-    b.onclick = () => { SAVE().map = id; M.persist(); sfx('tap'); if (MAPS[id]){ useMap(id); S.showroom(SAVE().looks); } buildMapSeg(); };
-    seg.appendChild(b);
-  }
-  const m = MAPS[SAVE().map];
-  $('mapInfo').textContent = m ? `${m.name}: ${m.blurb}` : 'Random: a different location every game';
+  // the two chips on the start page
+  const s = SAVE(), m = MAPS[s.map];
+  $('pickSide').textContent = { P:'🚓 Police', T:'🏃 Thief', R:'🎲 Either side' }[s.side] || '🎲 Either side';
+  $('pickMap').textContent = m ? `${m.icon} ${m.short || m.name}` : '🎲 Any place';
 }
+function buildPickers(){
+  const s = SAVE();
+  document.querySelectorAll('#sideSeg button').forEach(b => b.classList.toggle('on', b.dataset.side===s.side));
+  const L = $('mapList'); L.innerHTML = '';
+  for (const id of [...MAP_IDS, 'random']){
+    const m = MAPS[id], b = el('button', 'mapopt');
+    b.classList.toggle('on', (s.map||'street')===id);
+    b.appendChild(el('i', null, m ? m.icon : '🎲'));
+    const t = el('div'); t.appendChild(el('b', null, m ? m.name : 'Any place')); t.appendChild(el('small', null, m ? m.blurb : 'A different location every game')); b.appendChild(t);
+    b.onclick = () => { s.map = id; M.persist(); sfx('tap'); if (m){ useMap(id); S.showroom(s.looks); } buildPickers(); buildMapSeg(); };
+    L.appendChild(b);
+  }
+}
+const TUT = createTutorial({
+  meId: () => MC ? MC.meId : 0, name: () => SAVE().name, save: () => SAVE(), persist: () => M.persist(),
+  useMap: id => useMap(id), sfx: n => sfx(n), announce: (t,c,d) => announce(t,c,d),
+  pause: on => { if (MC) MC.paused = on; },
+  begin: me => { me.look = SAVE().looks[me.team]; prepViews(G.ents); beginMatch({ kind:'solo', tut:true, meId: me.id, side: me.team, ents: () => G.ents, state: () => G }); },
+});
+function startTutorial(){ initAudio(); TUT.start(); }
+$('tutPlay').onclick = () => { show('tutEnd', false); TUT.stop(); startSolo(SAVE().side); };
+$('tutHome').onclick = () => { show('tutEnd', false); TUT.stop(); goHome(); };
+$('tutSkip').onclick = () => { TUT.stop(); goHome(); };
 function startSolo(side, night){
   initAudio();
   const map = pickMap(); useMap(map);
@@ -468,13 +493,15 @@ function beginMatch(ctx){
   const st = MC.state(); const me = MC.ents()[MC.meId];
   S.hideShowroom(); S.clearViews(); S.setNight(!!st.night);
   S.snapCamera(me.x, me.y);
-  ctl.run = false; $('bRun').classList.remove('on'); $('feed').innerHTML='';
+  resetMatch(); $('feed').innerHTML='';
   $('abIcon').textContent = me.team==='P' ? '📯' : '💨'; $('abName').textContent = me.team==='P' ? 'WHISTLE' : 'DASH';
   buildChat(me.team);
   setMode('match');
-  announce(me.team==='P' ? 'YOU ARE POLICE — COUNT!' : 'YOU ARE A THIEF — HIDE!', me.team==='P'?'#7db8ff':'#ffb347', 2.2);
-  if (st.night) setTimeout(() => announce('🌙 NEPA TOOK LIGHT!', '#ffd84d', 1.8), 2300);
-  feed(`📍 ${MAP.name}`, '#fff');
+  if (!ctx.tut){
+    announce(me.team==='P' ? 'YOU ARE POLICE — COUNT!' : 'YOU ARE A THIEF — HIDE!', me.team==='P'?'#7db8ff':'#ffb347', 2.2);
+    if (st.night) setTimeout(() => announce('🌙 NEPA TOOK LIGHT!', '#ffd84d', 1.8), 2300);
+    feed(`📍 ${MAP.name}`, '#fff');
+  }
   $('ctrl').classList.toggle('cop', me.team==='P');
   ADS.gameplay(true);
 }
@@ -580,7 +607,7 @@ function guestPredict(dt, inp){
   if (e.fullT) me.stam = Math.max(me.stam, 100);
   let tx=mx*spd, ty=my*spd;
   if (me.dashT>0){ const fl=Math.hypot(me.fx,me.fy)||1; tx=me.fx/fl*CFG.dashSpeed; ty=me.fy/fl*CFG.dashSpeed; }
-  const k=Math.min(1,dt*16); me.vx += (tx-me.vx)*k; me.vy += (ty-me.vy)*k; if (me.dashT>0){ me.vx=tx; me.vy=ty; }
+  const k=1-Math.exp(-dt*((tx*tx+ty*ty < me.vx*me.vx+me.vy*me.vy) ? 20 : 14)); me.vx += (tx-me.vx)*k; me.vy += (ty-me.vy)*k; if (me.dashT>0){ me.vx=tx; me.vy=ty; }
   const ox=me.x, oy=me.y; me.x += me.vx*dt; me.y += me.vy*dt; collide(me);
   if (g.M.herd && g.M.herd.p >= 0) pushFromHerd(me, g.M.herd.p);
   const rvx=(me.x-ox)/dt, rvy=(me.y-oy)/dt;
@@ -673,7 +700,8 @@ function finishMatch(){
   for (const m of award.done){ mis.appendChild(el('div','rl in',`✅ Mission done: ${m.text} — claim ₦${m.reward} on the home screen`)); }
   if (award.passUps>0) mis.appendChild(el('div','rl in',`🎟 Street Pass: +${award.passUps} tier${award.passUps>1?'s':''} — claim your rewards`));
   for (const a of award.newAch){ a.seen = true; mis.appendChild(el('div','rl in',`🏆 Trophy unlocked: ${a.name} — claim ₦${a.reward}`)); }
-  if (ADS.rewardedAvailable() && award.coins>0){
+  ADS.showBanner($('resBanner'));   // [AD] banner under the results (AdSense only)
+  if (ADS.rewardedAvailable() && award.coins>0){   // [AD] watch an ad to double your ₦
     const db = el('button','btn gold',`▶ Watch an ad: double ₦${award.coins}`); db.style.cssText='width:100%;margin-top:8px;font-size:13px';
     db.onclick = async () => { db.disabled=true; const ok = await ADS.rewarded(); if (ok){ SAVE().coins += award.coins; M.persist(); sfx('coin'); toast(`+₦${award.coins}!`); db.remove(); } else { db.disabled=false; toast('No ad right now, try again later'); } };
     mis.appendChild(db);
@@ -688,7 +716,8 @@ function finishMatch(){
   setMode('res');
 }
 $('bAgain').onclick = async () => {
-  if (MC && MC.kind==='solo'){ await ADS.breakBetweenGames(); startSolo(SAVE().side); return; }
+  ADS.hideBanner($('resBanner'));
+  if (MC && MC.kind==='solo'){ await ADS.breakBetweenGames(); startSolo(SAVE().side); return; }   // [AD] short break between games
   if (NET.isHost) setPresence({ st:'lobby', g:null, s:null, in:null });
   S.clearViews(); S.showroom(SAVE().looks); MC = null; setMode('online');
 };
@@ -697,6 +726,7 @@ $('bHome').onclick = async () => { if (MC && MC.kind!=='solo'){ if (NET.isHost) 
 // ------------------------------------------------------------------ pause
 function togglePause(){ if (mode!=='match') return; const on = $('pause').classList.contains('hidden'); show('pause', on); if (MC) MC.paused = on && MC.kind==='solo'; syncPauseBtns(); }
 function syncPauseBtns(){ $('bShake').textContent = 'Screen shake: '+(SAVE().settings.shake?'ON':'OFF'); $('bMusic').textContent = 'Music: '+(musicOn?'ON':'OFF'); $('bMute').textContent = SAVE().settings.sound?'🔊':'🔇'; }
+$('bPCtl').onclick = () => openSettings('ctl');
 $('bPause').onclick = togglePause; $('bResume').onclick = togglePause;
 $('bShake').onclick = () => { SAVE().settings.shake = !SAVE().settings.shake; M.persist(); syncPauseBtns(); };
 $('bMusic').onclick = () => { musicOn = !musicOn; SAVE().settings.music = musicOn; M.persist(); syncPauseBtns(); };
@@ -812,9 +842,11 @@ function loop(){
         let n = 0;
         while (MC.acc >= 1/60 && n++ < 6){
           const inp = readInput();
-          step(1/60, e => e.ctrl==='local' ? inp : remoteInput(e));
+          for (const e of G.ents){ e.px = e.x; e.py = e.y; }
+          step(1/60, e => e.ctrl==='local' ? inp : e.ctrl==='idle' ? TUT.inputFor(e) : remoteInput(e));
           MC.acc -= 1/60;
         }
+        if (MC.acc > 1/60) MC.acc = 1/60;
       }
       if (MC.kind==='host'){ hostSendT -= dt; if (hostSendT<=0){ hostSendT = 1/15; setPresence({ s: packState(G) }); } }
     } else {
@@ -841,7 +873,10 @@ function loop(){
     // events
     for (const v of MC.state().events){ if (v.id > MC.lastEv){ MC.lastEv = v.id; handleEvent(v); } }
     const ents = MC.ents(), me = ents[MC.meId];
-    S.syncEntities(ents, dt, t, MC.meId, me.team, MC.kind==='guest', MC.state().over ? MC.state().over.win : null);
+    const alpha = (MC.kind==='guest' || MC.paused) ? 1 : Math.min(1, MC.acc*60);
+    S.syncEntities(ents, dt, t, MC.meId, me.team, MC.kind==='guest', MC.state().over ? MC.state().over.win : null, alpha);
+    if (TUT.active && !MC.paused) TUT.update(dt);
+    S.updateGuide(t);
     S.syncPickups(MC.state().pickups||[], t);
     S.syncStreetLive(MC.state(), ents, me, dt, t);
     S.syncWorld({ exitsOpen: MC.state().exitsOpen, alarm: MC.state().alarm, jailedCount: ents.filter(e=>e.team==='T'&&e.state==='jailed').length }, me, t);
@@ -881,4 +916,4 @@ function checkRotate(){
   show('rotate', touch && innerWidth > innerHeight*1.15);
 }
 checkRotate();
-window.PTG = { get G(){ return G; }, get MC(){ return MC; }, startSolo, step, SAVE, SRV };
+window.PTG = { get G(){ return G; }, get MC(){ return MC; }, startSolo, step, SAVE, SRV, TUT };

@@ -314,7 +314,9 @@ function applyEnt(e,inp,dt){
   spd *= e.mul;
   let tx = mx*spd, ty = my*spd;
   if (e.dashT>0){ const fl=Math.hypot(e.fx,e.fy)||1; tx=e.fx/fl*CFG.dashSpeed; ty=e.fy/fl*CFG.dashSpeed; }
-  const k = Math.min(1, dt*16);
+  // speed up a touch gently, stop quickly: feels responsive without being twitchy
+  const stopping = tx*tx+ty*ty < e.vx*e.vx+e.vy*e.vy;
+  const k = 1-Math.exp(-dt*(stopping ? 20 : 14));
   e.vx += (tx-e.vx)*k; e.vy += (ty-e.vy)*k;
   if (e.dashT>0){ e.vx=tx; e.vy=ty; }
   const ox=e.x, oy=e.y;
@@ -410,7 +412,7 @@ function doEscape(e,ex){
   ev('escape', e.id, ex); say(e,'escape');
 }
 function checkWin(){
-  if (G.over) return;
+  if (G.over || G.tutorial) return;
   if (G.escaped >= CFG.escapesToWin) return endMatch('T', 0);
   if (thieves().every(t => t.state==='jailed' || t.state==='escaped')) return endMatch('P', 1);
   if (G.playT >= CFG.matchTime) return endMatch('P', 2);

@@ -15,6 +15,7 @@ import { newMatch, step, useMatch } from '../js/sim.js';
 import { packState, rosterOf } from '../js/net.js';
 import { MAPS } from '../js/world.js';
 import { CFG } from '../js/world.js';
+import { productById } from '../js/products.js';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dir, '..');
@@ -23,12 +24,50 @@ const DATA = process.env.DATA_DIR || path.join(__dir, 'data');
 const PROTO = 1;
 fs.mkdirSync(DATA, { recursive: true });
 
+// ---------------------------------------------------------------- payments [PAY]
+// Set PAYSTACK_SECRET=sk_live_... (or sk_test_... while testing) where the server runs.
+// Never put the secret key in config.js or anywhere players can see it.
+const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET || '';
+const PAYSTACK_API = process.env.PAYSTACK_API || 'https://api.paystack.co';   // only changed for testing
+const PAY_FILE = path.join(DATA, 'payments.json');
+let paid = {};      // reference -> { product, amount, email, at }
+try { paid = JSON.parse(fs.readFileSync(PAY_FILE, 'utf8')); } catch {}
+const savePaid = () => fs.writeFile(PAY_FILE + '.tmp', JSON.stringify(paid), () => fs.rename(PAY_FILE + '.tmp', PAY_FILE, () => {}));
+const json = (res, code, obj) => { res.writeHead(code, { 'content-type':'application/json', 'cache-control':'no-store' }); res.end(JSON.stringify(obj)); };
+function readBody(req, max = 2048){
+  return new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > max){ bad(new Error('too big')); req.destroy(); } }); req.on('end', () => ok(b)); req.on('error', bad); });
+}
+async function verifyPayment(req, res){
+  if (req.method !== 'POST') return json(res, 405, { ok:false, reason:'POST only' });
+  if (!PAYSTACK_SECRET) return json(res, 503, { ok:false, reason:'payments not set up on the server' });
+  let body; try { body = JSON.parse(await readBody(req)); } catch { return json(res, 400, { ok:false, reason:'bad request' }); }
+  const ref = String(body.ref || ''), product = productById(String(body.product || ''));
+  if (!/^[\w.-]{6,100}$/.test(ref) || !product) return json(res, 400, { ok:false, reason:'unknown product or reference' });
+  // the same reference asked again for the same product (e.g. the phone retried): say yes, the game ignores repeats
+  if (paid[ref]) return paid[ref].product === product.id ? json(res, 200, { ok:true, product: product.id, repeat:true }) : json(res, 409, { ok:false, reason:'reference already used' });
+  let r;
+  try {
+    const resp = await fetch(PAYSTACK_API + '/transaction/verify/' + encodeURIComponent(ref), { headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET } });
+    r = await resp.json();
+  } catch { return json(res, 502, { ok:false, reason:'could not reach Paystack' }); }
+  const d = r && r.data;
+  if (!r || r.status !== true || !d || d.status !== 'success') return json(res, 402, { ok:false, reason:'payment not successful' });
+  if (d.currency !== 'NGN' || d.amount !== product.price * 100) return json(res, 402, { ok:false, reason:'amount does not match' });
+  if (d.reference !== ref) return json(res, 402, { ok:false, reason:'reference mismatch' });
+  paid[ref] = { product: product.id, amount: d.amount, email: d.customer && d.customer.email || '', at: Date.now() };
+  savePaid();
+  console.log('payment ok', ref, product.id, d.amount / 100, 'NGN');
+  return json(res, 200, { ok:true, product: product.id });
+}
+
+
 // ---------------------------------------------------------------- static files
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css', '.json':'application/json', '.webmanifest':'application/manifest+json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.mp3':'audio/mpeg' };
-const ALLOWED = /^\/(index\.html|config\.js|sw\.js|manifest\.webmanifest|privacy\.html|js\/[\w-]+\.js|icons\/[\w.-]+|audio\/[\w.-]+\.mp3)$/;
+const ALLOWED = /^\/(index\.html|config\.js|sw\.js|manifest\.webmanifest|privacy\.html|js\/[\w-]+\.js|css\/[\w-]+\.css|icons\/[\w.-]+|audio\/[\w.-]+\.mp3)$/;
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/health'){ res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ ok:true, rooms: rooms.size, players: clients.size })); return; }
+  if (url.pathname === '/api/verify'){ verifyPayment(req, res).catch(() => json(res, 500, { ok:false, reason:'server error' })); return; }
   if (url.pathname === '/api/leaderboard'){ res.writeHead(200, {'content-type':'application/json','cache-control':'max-age=30'}); res.end(JSON.stringify(topBoard())); return; }
   let p = url.pathname === '/' ? '/index.html' : url.pathname;
   if (!ALLOWED.test(p)){ res.writeHead(404); res.end('Not found'); return; }

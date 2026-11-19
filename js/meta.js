@@ -11,18 +11,22 @@ export const SHOES = ['#222222','#f2f2f2','#c0392b','#f1c40f','#2980b9','#0b8a3e
 export const CATALOG = {
   P: {
     outfit: [
-      { id:'p_navy',  name:'Force Navy',     col:'#1d3a7a', price:0 },
-      { id:'p_black', name:'Black Ops',      col:'#1b1b22', price:150 },
+      { id:'p_npf',   name:'NPF Black',      col:'#1a1b20', price:0 },
+      { id:'p_navy',  name:'Old Force Blue', col:'#1d3a7a', price:0 },
+      { id:'p_black', name:'Night Patrol',   col:'#22344f', price:150 },
       { id:'p_khaki', name:'Khaki Patrol',   col:'#a68a55', price:200, lvl:2 },
       { id:'p_white', name:'Traffic White',  col:'#e9e9e9', price:300, lvl:3 },
       { id:'p_camo',  name:'MOPOL Camo',     col:'camo',    price:450, lvl:5 },
       { id:'p_red',   name:'Parade Red',     col:'#9e1b24', price:700, lvl:7 },
       { id:'p_gold',  name:'Commissioner Gold', col:'#c79a1e', price:1500, lvl:10 },
       { id:'p_neon',  name:'Neon Patrol',    col:'#14d1c5', pass:10 },
+      { id:'p_ceremonial', name:'Ceremonial Green', col:'#0f6b3a', paid:'owambe' },
+      { id:'p_rrs',   name:'Rapid Response', col:'#2a2f35', paid:'areaboss' },
     ],
     head: [
+      { id:'pberet', name:'Police Beret', price:0 },
       { id:'cap',    name:'Peaked Cap', price:0 },
-      { id:'beret',  name:'Beret',      price:150 },
+      { id:'beret',  name:'Red Beret',  price:150 },
       { id:'none',   name:'No Hat',     price:0 },
       { id:'helmet', name:'Riot Helmet',price:350, lvl:3 },
       { id:'bucket', name:'Bucket Hat', price:200, lvl:2 },
@@ -40,6 +44,8 @@ export const CATALOG = {
       { id:'t_jersey', name:'Super Eagles Kit', a:'#0b8a3e', b:'#0b8a3e', jersey:true, price:600, lvl:6 },
       { id:'t_aso',    name:'Aso-Oke Royal',   pattern:'aso',            price:1200, lvl:9 },
       { id:'t_gold',   name:'Gold Stripes',    a:'#c79a1e', b:'#151515', pass:15 },
+      { id:'t_agbada', name:'Owambe Agbada',   pattern:'agbada', paid:'owambe' },
+      { id:'t_boss',   name:'Area Boss',       a:'#111111', b:'#9e1b24', paid:'areaboss' },
     ],
     head: [
       { id:'bandana', name:'Bandana Mask', price:0 },
@@ -50,6 +56,7 @@ export const CATALOG = {
       { id:'durag',   name:'Durag',        price:300, lvl:4 },
       { id:'fila',    name:'Fila Cap',     price:250, lvl:3 },
       { id:'crown',   name:'Street King Crown', price:1000, lvl:8 },
+      { id:'gele_gold', name:'Gold Gele',  paid:'owambe' },
       { id:'halo',    name:'Siren Halo',   pass:20 },
     ],
   },
@@ -78,12 +85,13 @@ export const CATALOG = {
   ],
 };
 export function rarity(it){
+  if (it.paid) return ['Exclusive','#ff7ad9'];
   if (it.pass) return ['Street Pass','#c86bff'];
   const p = it.price||0;
   return p===0 ? ['Starter','#9aa'] : p<=150 ? ['Common','#cfd8dc'] : p<=350 ? ['Rare','#4fc3ff'] : p<=700 ? ['Epic','#ff9f43'] : ['Legendary','#ffd84d'];
 }
 export const DEFAULT_LOOK = {
-  P: { skin:2, outfit:'p_navy', head:'cap', eyes:'none', extra:'none', shoes:0, dance:'cheer' },
+  P: { skin:2, outfit:'p_npf', head:'pberet', eyes:'none', extra:'none', shoes:0, dance:'cheer' },
   T: { skin:3, outfit:'t_bw', head:'bandana', eyes:'none', extra:'none', shoes:0, dance:'cheer' },
 };
 export function catalogFor(team, cat){
@@ -95,6 +103,12 @@ export function randomLook(team){
   const pick = a => { a = a.filter(x => !x.pass); return a[Math.random()*a.length|0]; };
   return { skin: Math.random()*SKINS.length|0, outfit: pick(CATALOG[team].outfit).id, head: pick(CATALOG[team].head).id,
     eyes: Math.random()<.7?'none':pick(CATALOG.eyes).id, extra: Math.random()<.6?'none':pick(CATALOG.extra).id, shoes: Math.random()*SHOES.length|0, dance: pick(CATALOG.dance).id };
+}
+// police bots mostly turn up in the everyday black uniform, with the odd MOPOL camo or traffic white
+export function botLook(team){
+  const l = randomLook(team);
+  if (team==='P'){ const r = Math.random(); l.outfit = r<.7 ? 'p_npf' : r<.85 ? 'p_camo' : r<.93 ? 'p_white' : l.outfit; l.head = Math.random()<.6 ? 'pberet' : 'cap'; l.extra = 'none'; l.shoes = 0; }
+  return l;
 }
 
 export const RANKS = {
@@ -128,7 +142,7 @@ let dbRef = null, dbDoc = null, saveTimer = null;
 
 function fresh(){
   return { v:1, pid: Array.from({length:16},()=>'abcdefghijkmnpqrstuvwxyz23456789'[Math.random()*32|0]).join(''), name:'Player'+(100+Math.random()*900|0), xp:0, level:1, coins:150,
-    owned:['p_navy','cap','none','t_bw','bandana','cheer'], looks: JSON.parse(JSON.stringify(DEFAULT_LOOK)),
+    owned:['p_npf','pberet','p_navy','cap','none','t_bw','bandana','cheer'], looks: JSON.parse(JSON.stringify(DEFAULT_LOOK)),
     missions:{ date:'', list:[] }, streak:{ last:'', count:0, claimedToday:false },
     stats:{ games:0, wins:0, caps:0, frees:0, escapes:0, best:0, dodges:0, nightGames:0, nightWins:0, online:0, winStreak:0, loseStreak:0 },
     side:'R', map:'street', settings:{ shake:true, sound:true, music:true, quality:'auto' },
@@ -141,6 +155,8 @@ function migrate(s){
     stats:{...f.stats, ...(s.stats||{})}, settings:{...f.settings, ...(s.settings||{})}, streak:{...f.streak, ...(s.streak||{})},
     pass:{...f.pass, ...(s.pass||{})}, ach:{...f.ach, ...(s.ach||{})} };
   for (const t of ['P','T']) if (!out.looks[t].dance) out.looks[t].dance='cheer';
+  // once: players still in the old plain-blue starter uniform move to the new black one (they keep the blue)
+  if (!out.uni2){ out.uni2 = true; if (out.looks.P.outfit==='p_navy' && out.looks.P.head==='cap'){ out.looks.P.outfit='p_npf'; out.looks.P.head='pberet'; } }
   if (!Array.isArray(out.owned)) out.owned = f.owned;
   if (!out.pid) out.pid = f.pid;
   for (const id of f.owned) if (!out.owned.includes(id)) out.owned.push(id);
@@ -310,6 +326,7 @@ export const achReady = () => ACHIEVEMENTS.filter(a => !SAVE.ach.claimed.include
 export function itemState(team, cat, item){
   if (cat==='skin' || cat==='shoes') return 'owned';
   if (SAVE.owned.includes(item.id)) return 'owned';
+  if (item.paid) return 'store';      // [PAY] sold for real money in the Store
   if (item.pass) return 'pass';
   if (!item.price) return 'owned';
   if (item.lvl && SAVE.level < item.lvl) return 'locked';
@@ -317,7 +334,28 @@ export function itemState(team, cat, item){
 }
 export function buy(item){
   if (SAVE.owned.includes(item.id)) return true;
-  if (item.pass) return false;
+  if (item.pass || item.paid) return false;
   if ((item.lvl && SAVE.level<item.lvl) || SAVE.coins < item.price) return false;
   SAVE.coins -= item.price; SAVE.owned.push(item.id); persist(); return true;
 }
+
+// ---- real-money purchases [PAY] -------------------------------------------
+// Called only after the server has confirmed the payment with Paystack.
+// Each payment reference is applied once, so a retry can't double the reward.
+export function grantProduct(p, ref){
+  SAVE.receipts = SAVE.receipts || [];
+  if (ref && SAVE.receipts.includes(ref)) return false;
+  if (p.cash) SAVE.coins += p.cash;
+  for (const id of (p.items || [])) if (!SAVE.owned.includes(id)) SAVE.owned.push(id);
+  if (p.kind === 'noads') SAVE.noAds = true;
+  if (ref) SAVE.receipts.push(ref);
+  persist(); return true;
+}
+// free ₦ for watching an ad, a few times a day [AD]
+export const AD_CASH = 50, AD_CASH_PER_DAY = 5;
+export function adCashLeft(){
+  const d = new Date().toISOString().slice(0,10);
+  if (!SAVE.adCash || SAVE.adCash.d !== d) SAVE.adCash = { d, n: 0 };
+  return AD_CASH_PER_DAY - SAVE.adCash.n;
+}
+export function giveAdCash(){ adCashLeft(); SAVE.adCash.n++; SAVE.coins += AD_CASH; persist(); }
