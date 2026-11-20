@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Police &amp; Thief: Naija Streets</title>
+<meta name="description" content="The Nigerian playground game, online. Police chase, thieves hide, free your people and escape together. Free to play in your browser.">
+<meta name="theme-color" content="#0b8a3e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta property="og:title" content="Police & Thief: Naija Streets">
+<meta property="og:description" content="Catch them if you can. Free your people. Escape together.">
+<meta property="og:image" content="icons/share.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">LOADING THE STREET…</div>
+
+<!-- HOME -->
+<div id="home" class="layer hidden">
+  <div class="top">
+    <div class="avatar" id="hAv">P<span class="lv" id="hLv">1</span></div>
+    <div>
+      <div class="pname"><span id="hName">Player</span><button id="bRename">✎</button></div>
+      <div class="rank" id="hRank">Recruit · Small Pikin</div>
+      <div class="xpbar"><i id="hXp" style="width:0"></i></div>
+    </div>
+    <div class="coins">₦ <span id="hCoins">0</span></div>
+  </div>
+  <div class="logo"><span class="l1">POLICE &amp; THIEF</span><br><span class="l2">NAIJA STREETS</span></div>
+  <div class="spacer"></div>
+  <div class="card hinfo">
+    <div class="streak" id="streak"></div>
+    <button id="misLine"></button>
+  </div>
+  <div class="card hplay">
+    <div class="lab">PLAY AS</div>
+    <div class="seg" id="sideSeg"><button data-side="P">🚓 Police</button><button data-side="R">🎲 Random</button><button data-side="T">🏃 Thief</button></div>
+    <div class="lab">WHERE</div>
+    <div class="seg" id="mapSeg"></div>
+    <div id="mapInfo"></div>
+    <button class="btn green" id="bPlay">▶ PLAY</button>
+  </div>
+  <div>
+    <div class="row"><button class="btn orange" id="bWard">👕 Wardrobe</button><button class="btn blue" id="bOnline">🌐 Play Online</button></div>
+    <div class="row"><button class="btn ghost" id="bPass">🎟 Street Pass</button><button class="btn ghost" id="bAch">🏆 Trophies<span id="achDot"></span></button><button class="btn ghost" id="bSet" style="flex:.45">⚙</button><button class="btn ghost" id="bHow" style="flex:.45">?</button></div>
+  </div>
+</div>
+
+<!-- WARDROBE -->
+<div id="ward" class="layer hidden">
+  <div class="wtop">
+    <button class="btn ghost" id="wBack" style="padding:10px 14px">←</button>
+    <div class="seg" id="wTeam" style="flex:1;margin:0"><button data-team="P" class="on">🚓 Police</button><button data-team="T">🏃 Thief</button></div>
+    <div class="coins">₦ <span id="wCoins">0</span></div>
+  </div>
+  <div class="spacer" id="wSpin"></div>
+  <div class="card sheet">
+    <div class="chips" id="wCats"></div>
+    <div class="grid" id="wGrid"></div>
+  </div>
+</div>
+
+<!-- ONLINE -->
+<div id="online" class="layer hidden">
+  <div class="card panel" id="onPanel"></div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="layer hidden">
+  <div class="hrow">
+    <div id="hbtns"><button id="bPause">II</button><button id="bMute">🔊</button><div id="wallet">₦0</div></div>
+    <div id="timer"><b id="tTime">4:00</b><span id="tSub">POLICE COUNTING</span><div id="pips"></div></div>
+    <canvas id="mini" width="168" height="268"></canvas>
+  </div>
+  <ul id="feed"></ul>
+</div>
+<div id="ctrl" class="hidden">
+  <div id="joyZone" aria-label="Movement joystick"><div id="joyBase"><span class="joy-mark joy-up">▲</span><span class="joy-mark joy-down">▼</span><span class="joy-mark joy-left">◀</span><span class="joy-mark joy-right">▶</span></div><div id="joyThumb"><span>●</span></div></div>
+  <div id="chat"></div>
+  <button class="cb" id="bAbil"><div class="cd"></div><span id="abIcon">💨</span><b id="abName">DASH</b></button>
+  <button class="cb" id="bRun">RUN</button>
+  <button class="cb" id="bAct">ACTION</button>
+</div>
+<div id="stamBar" class="hidden"><i></i></div>
+<div id="hint" class="hidden"></div>
+<div id="tags"></div>
+<div id="ann"></div>
+
+<!-- RESULTS -->
+<div id="res" class="layer hidden">
+  <div class="card panel">
+    <p id="resSub" style="margin:0;font-weight:900;opacity:.8"></p>
+    <h1 id="resTitle"></h1>
+    <p id="resReason" style="font-size:13px"></p>
+    <div id="resLines"></div>
+    <div id="resLv" style="margin:10px 0"></div>
+    <div id="resMis"></div>
+    <details style="text-align:left;margin-top:8px"><summary style="font-weight:900;color:#ffd84d">Match stats</summary><table id="resTable"></table></details>
+    <div class="row"><button class="btn green" id="bAgain">PLAY AGAIN</button><button class="btn ghost" id="bHome">HOME</button></div>
+  </div>
+</div>
+
+<div id="misDlg" class="dlg hidden"><div class="card" style="max-height:82vh;overflow:auto">
+  <div class="missions" id="missions"></div>
+  <button class="btn green" id="misOk" style="width:100%;margin-top:10px">Close</button>
+</div></div>
+<div id="pause" class="dlg hidden"><div class="card" style="text-align:center">
+  <div class="bung" style="font-size:26px;color:#ffd84d;margin-bottom:12px">PAUSED</div>
+  <div class="row" style="flex-direction:column"><button class="btn green" id="bResume">Resume</button>
+  <button class="btn ghost" id="bShake">Screen shake: ON</button><button class="btn ghost" id="bMusic">Music: ON</button><button class="btn orange" id="bQuit">Quit match</button></div>
+</div></div>
+<div id="how" class="dlg hidden"><div class="card" style="max-height:80vh;overflow:auto;font-size:14px;line-height:1.45">
+  <div class="bung" style="font-size:20px;color:#ffd84d">HOW TO PLAY</div>
+  <p><b>Police 🚓</b> Get close to a thief and you grab automatically; they get a split second to dodge. Caught thieves go to the Police Post. Catch everyone to win. <b>Whistle 📯</b> slows every thief near you and pulls them out of hiding. Don't hang around inside the orange ring: Oga reassigns campers.</p>
+  <p><b>Thieves 🏃</b> Hide under trees and canopies (sprinting gives you away). Hold <b>FREE</b> at a gate of the Post to release everyone. <b>Dash 💨</b> is a quick burst that can beat a grab. When the four corner exits open at 2:00, hold <b>ESCAPE</b> inside one. Two escapes and the thieves win.</p>
+  <p><b>Street money and shops ₦</b> Pick up the green ₦ notes, then stand at a shop counter and tap <b>BUY</b>: jollof at Mama Put, pure water at Iya Bisi, suya, glucose, kunu, small chops. Each one helps your running. Free Agege bread and zobo also turn up on the street.</p>
+  <p><b>Locations 📍</b> Pick where to play on the home screen. <b>Naija Street</b> has the football field and cattle crossing the road. <b>Market Day</b> is a maze of stalls with cheaper food and more ₦. In the <b>School Yard</b>, ring the bell to see the other team on your map. <b>Behind the Church</b> has tall grass to hide in and a hole in the fence that takes you across the compound.</p>
+  <p><b>Football ⚽</b> There's a ball on the field. Run into it to kick it, even mid-chase. Put it between the posts for ₦30 and bragging rights.</p>
+  <p><b>Night games</b> 🌙 "NEPA took light": the police see less and carry torches.</p>
+  <p><b>Controls</b> Use the visible joystick on the lower-left to move. RUN toggles sprint. Keyboard: WASD, Shift, Space, Q.</p>
+  <p>Win games, finish daily missions and keep your streak to earn ₦ and XP for new outfits and ranks.</p>
+  <button class="btn green" id="bHowOk" style="width:100%">Oya, let's go</button>
+</div></div>
+<div id="nameDlg" class="dlg hidden"><div class="card">
+  <div class="bung" style="color:#ffd84d;margin-bottom:8px">YOUR STREET NAME</div>
+  <input class="txt" id="nameIn" maxlength="14" style="text-transform:none;letter-spacing:1px">
+  <div class="row"><button class="btn green" id="nameOk">Save</button><button class="btn ghost" id="nameCancel">Cancel</button></div>
+</div></div>
+<div id="passDlg" class="dlg hidden"><div class="card" style="max-height:82vh;display:flex;flex-direction:column">
+  <div class="bung" style="font-size:20px;color:#c86bff">🎟 STREET PASS</div>
+  <div id="passHead" style="font-size:13px;font-weight:800;margin:4px 0 8px"></div>
+  <div id="passList" style="overflow-y:auto;flex:1"></div>
+  <button class="btn green" style="margin-top:10px" onclick="this.closest('.dlg').classList.add('hidden')">Close</button>
+</div></div>
+<div id="achDlg" class="dlg hidden"><div class="card" style="max-height:82vh;display:flex;flex-direction:column">
+  <div class="bung" style="font-size:20px;color:#ffd84d">🏆 TROPHIES</div>
+  <div id="achList" style="overflow-y:auto;flex:1;margin-top:8px"></div>
+  <button class="btn green" style="margin-top:10px" onclick="this.closest('.dlg').classList.add('hidden')">Close</button>
+</div></div>
+<div id="setDlg" class="dlg hidden"><div class="card">
+  <div class="bung" style="font-size:20px;color:#ffd84d;margin-bottom:10px">⚙ SETTINGS</div>
+  <div class="row" style="flex-direction:column">
+    <button class="btn ghost" id="sQual">Graphics: AUTO</button>
+    <button class="btn ghost" id="sSound">Sound: ON</button>
+    <button class="btn ghost" id="sMusic">Music: ON</button>
+    <button class="btn ghost" id="sShake">Screen shake: ON</button>
+    <a class="btn ghost" href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Privacy policy</a>
+    <button class="btn green" onclick="this.closest('.dlg').classList.add('hidden')">Done</button>
+  </div>
+</div></div>
+<div id="toast" style="opacity:0"></div>
+<div id="rotate" class="hidden"><div class="ph">📱</div><p>Turn your phone upright<br>to play</p></div>
+
+<script src="./config.js" onerror="window.PT_CONFIG={}"></script>
+<script>
+  // install / offline support, only on the game's own website
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !/claude/.test(location.hostname)) addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Render Blueprint: lets Render set up the game server from this repo in one go.
+# On render.com: New + > Blueprint > pick this GitHub repo > Apply.
+services:
+  - type: web
+    name: police-thief-naija      # becomes https://police-thief-naija.onrender.com (or similar if taken)
+    runtime: docker               # uses the Dockerfile in this folder
+    plan: free                    # sleeps after 15 quiet minutes; 'starter' (paid) stays awake
+    region: frankfurt             # the closest Render region to Nigeria
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS      # e.g. https://jesse-cloud515.github.io  (empty = any website)
+        sync: false
+      - key: PAYSTACK_SECRET      # only when you switch payments on. Never put it in config.js
+        sync: false

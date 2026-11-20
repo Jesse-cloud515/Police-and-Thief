@@ -64,8 +64,30 @@ async function verifyPayment(req, res){
 // ---------------------------------------------------------------- static files
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css', '.json':'application/json', '.webmanifest':'application/manifest+json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.mp3':'audio/mpeg' };
 const ALLOWED = /^\/(index\.html|config\.js|sw\.js|manifest\.webmanifest|privacy\.html|js\/[\w-]+\.js|css\/[\w-]+\.css|icons\/[\w.-]+|audio\/[\w.-]+\.mp3)$/;
+// ---------------------------------------------------------------- other websites
+// When the game files live on a different website from this server (for example GitHub Pages),
+// browsers need permission to call /api/... from there. Set ALLOWED_ORIGINS to a comma-separated
+// list such as  https://jesse-cloud515.github.io,https://policeandthief.ng
+// to allow only those. Left empty, any website may use the API and connect to matches.
+const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
+// the server's own address is always allowed, as are the ones in ALLOWED_ORIGINS
+const originOk = (o, host) => { if (!ORIGINS.length || !o || ORIGINS.includes(o)) return true; try { return new URL(o).host === host; } catch { return false; } };
+function cors(req, res){
+  const o = req.headers.origin;
+  if (o && originOk(o, req.headers.host)){
+    res.setHeader('access-control-allow-origin', ORIGINS.length ? o : '*');
+    res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+    res.setHeader('access-control-allow-headers', 'content-type');
+    res.setHeader('vary', 'origin');
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname.startsWith('/api/') || url.pathname === '/health'){
+    cors(req, res);
+    if (req.method === 'OPTIONS'){ res.writeHead(204); res.end(); return; }
+  }
   if (url.pathname === '/health'){ res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ ok:true, rooms: rooms.size, players: clients.size })); return; }
   if (url.pathname === '/api/verify'){ verifyPayment(req, res).catch(() => json(res, 500, { ok:false, reason:'server error' })); return; }
   if (url.pathname === '/api/leaderboard'){ res.writeHead(200, {'content-type':'application/json','cache-control':'max-age=30'}); res.end(JSON.stringify(topBoard())); return; }
@@ -102,7 +124,25 @@ const clients = new Map();     // ws -> client
 const rooms = new Map();       // code -> room
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const newCode = () => { let c; do { c = Array.from({length:4}, () => LETTERS[Math.random()*LETTERS.length|0]).join(''); } while (rooms.has(c)); return c; };
-const clean = (s, n=14) => String(s||'').replace(/[^\w .'-]/g,'').trim().slice(0,n) || 'Player';
+// Words that can't be used in player names. Matching ignores case, spaces, dots and simple
+// letter swaps (0 for o, 1 for i, 3 for e, 4 or @ for a, 5 or $ for s), and finds the word
+// inside longer names too. Add words in lower case. A rude name becomes 'Player' plus a number.
+const BAD_WORDS = ['fuck','shit','bitch','cunt','dick','pussy','nigga','nigger','whore','slut','bastard',
+  'asshole','penis','vagina','porn','sex','rape','ashawo','olosho','ode','werey','oloshi','mumu','idiot',
+  'yeye','dickhead','motherf','fuk','fck','kill','nazi','hitler','boko'];
+// words matched only as a whole part of the name, so real names like Dickson, Nazir or
+// Odenike, and words like Skill or Grape, still pass
+const WHOLE_ONLY = ['ode','dick','sex','rape','nazi','kill','boko'];
+const squash = s => s.toLowerCase().replace(/0/g,'o').replace(/1/g,'i').replace(/3/g,'e').replace(/[4@]/g,'a').replace(/[5$]/g,'s').replace(/[^a-z ]/g,'');
+function rude(name){
+  const parts = squash(name).split(/\s+/), joined = parts.join('');
+  return BAD_WORDS.some(w => WHOLE_ONLY.includes(w) ? parts.includes(w) : joined.includes(w));
+}
+const clean = (s, n=14) => {
+  const t = String(s||'').replace(/[^\w .'-]/g,'').trim().slice(0,n);
+  if (!t) return 'Player';
+  return rude(t) ? 'Player' + (100 + Math.random()*900 | 0) : t;
+};
 function cleanLook(l){ const o={}; if (!l || typeof l!=='object') return null; for (const k of ['skin','outfit','head','eyes','extra','shoes','dance']){ const v=l[k]; o[k] = (typeof v==='number' && v>=0 && v<50) ? v|0 : (typeof v==='string' ? v.replace(/[^\w]/g,'').slice(0,20) : 0); } return o; }
 const send = (c, msg) => { if (c.ws.readyState === 1) c.ws.send(JSON.stringify(msg)); };
 
@@ -198,7 +238,7 @@ setInterval(() => {
 }, 1000);
 
 // ---------------------------------------------------------------- websocket
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096, verifyClient: info => originOk(info.origin, info.req.headers.host) });
 wss.on('connection', (ws) => {
   const c = { ws, pid: null, name: 'Player', side: 'R', looks: null, room: null, msgs: 0, win: Date.now() };
   clients.set(ws, c);

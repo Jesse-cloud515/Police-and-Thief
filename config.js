@@ -1,9 +1,12 @@
 // Game settings you can change without touching the code.
 window.PT_CONFIG = {
-  // Online server. Leave '' when the game is served by server/server.mjs (same website).
-  // If the game is on a different host than the server, put e.g. 'wss://play.yourdomain.com/ws'
+  // Online server. Leave '' when players open the game from the server's own address.
+  // If the game is on a different website from the server (for example GitHub Pages), put the
+  // server's address here, starting wss:// and ending /ws, e.g. 'wss://police-thief-naija.onrender.com/ws'
+  // Without it, the GitHub Pages copy is single player only.
   server: '',
-  // Address of the server's /api/... if it is not the same website as the game. Usually leave ''.
+  // The server's address for payments and the leaderboard, when the game is on a different website,
+  // e.g. 'https://police-thief-naija.onrender.com'. Leave '' otherwise.
   api: '',
   // [AD] Ads: 'none' | 'poki' | 'crazygames' | 'h5'   (see js/ads.js and MONETIZATION.md)
   //   h5 = Google ads on your own website: client is your AdSense publisher id 'ca-pub-...',

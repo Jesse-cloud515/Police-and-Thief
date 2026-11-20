@@ -304,7 +304,7 @@ function renderOnline(){
   const p = $('onPanel');
   // redraw only when what's on screen really changed, so taps never land on a button that was just replaced
   const L = SRV.lobby;
-  const key = [SRV.status, showBoard, !!NET.room, NET.available, L ? JSON.stringify({ ...L, startsIn:null }) : '', SRV.lb ? SRV.lb.length : -1, SAVE().side].join('|');
+  const key = [SRV.status, srvWaking, showBoard, !!NET.room, NET.available, L ? JSON.stringify({ ...L, startsIn:null }) : '', SRV.lb ? SRV.lb.length : -1, SAVE().side].join('|');
   if (key === onlineKey && p.childNodes.length){
     if (L && L.quick){ const c = p.querySelector('.code'); if (c) c.textContent = L.startsIn!=null ? `0:${String(L.startsIn).padStart(2,'0')}` : '…'; }
     return;
@@ -317,8 +317,9 @@ function renderOnline(){
   // 1) public game server (when the game runs on its own website)
   if (serverUrl()){
     if (SRV.status!=='on'){
-      p.appendChild(el('p',null, SRV.status==='connecting' ? 'Connecting to the game server…' : "Can't reach the game server right now."));
-      if (SRV.status==='off'){
+      p.appendChild(el('p',null, srvWaking ? 'Waking the game server up. The first visit after a quiet spell can take up to a minute…'
+        : SRV.status==='connecting' || srvWaking ? 'Connecting to the game server…' : "Can't reach the game server right now. Check your data connection and try again."));
+      if (SRV.status==='off' && !srvWaking){
         const r = el('button','btn blue','TRY AGAIN'); r.style.width='100%'; r.onclick=()=>{ srvTried=false; tryServer(); }; p.appendChild(r);
         if (!srvTried) tryServer();
       }
@@ -341,7 +342,7 @@ function renderOnline(){
   }
   // 2) claude.ai rooms (when played inside claude.ai)
   if (!NET.available){
-    p.appendChild(el('p',null,"Online play needs the game's own website (with its game server), or claude.ai rooms. Neither is available here, so single player with bots is ready to go instead."));
+    p.appendChild(el('p',null,"Online play isn't switched on for this copy of the game yet. Single player with bots is ready to go instead."));
     return;
   }
   renderClaudeRooms(p);
@@ -372,11 +373,23 @@ function renderBoard(p){
   p.appendChild(t);
   const b = el('button','btn ghost','← Back to online'); b.style.cssText='width:100%;margin-top:10px'; b.onclick=()=>{ showBoard=false; renderOnline(); }; p.appendChild(b);
 }
+// Cheap hosting plans put the server to sleep when nobody is playing. The first visitor wakes it,
+// which can take up to a minute, so keep trying quietly for SRV_WAKE seconds before giving up.
+const SRV_WAKE = 75;
+let srvWaking = false;
 async function tryServer(){
+  if (srvWaking) return;
   srvTried = true;
-  const pr = connectServer({ pid: SAVE().pid, name: SAVE().name, looks: SAVE().looks });
-  if (mode==='online') renderOnline();
-  await pr; if (mode==='online') renderOnline();
+  const t0 = performance.now();
+  for (let i = 0; ; i++){
+    const pr = connectServer({ pid: SAVE().pid, name: SAVE().name, looks: SAVE().looks });
+    onlineKey = ''; if (mode==='online') renderOnline();
+    const ok = await pr;
+    if (ok || mode!=='online' || (performance.now()-t0)/1000 > SRV_WAKE){ srvWaking = false; break; }
+    srvWaking = true; onlineKey = ''; renderOnline();
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  onlineKey = ''; if (mode==='online') renderOnline();
 }
 SRV.onChange = (why) => {
   if (why==='err' && SRV.err){ toast(SRV.err); SRV.err=null; }

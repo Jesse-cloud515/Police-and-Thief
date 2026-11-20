@@ -91,9 +91,13 @@ export function applySnapshot(M, s){
 // =============================================================
 export const SRV = { ws:null, status:'off', url:null, lobby:null, game:null, lastS:null, lb:null, err:null, onChange:null, onChat:null };
 const PROTO = 1;
+const STATIC_HOSTS = /(\.github\.io|\.netlify\.app|\.vercel\.app|\.pages\.dev)$/i;
 export function serverUrl(){
   const cfg = (window.PT_CONFIG||{});
   if (cfg.server) return cfg.server;
+  // these websites only hold files and can't run the game server, so there's nothing to connect to
+  // unless config.js says where the server is
+  if (STATIC_HOSTS.test(location.hostname)) return null;
   if (/^https?:$/.test(location.protocol) && !/claude/.test(location.hostname) && location.hostname!=='') return (location.protocol==='https:'?'wss://':'ws://') + location.host + '/ws';
   return null;
 }
@@ -106,7 +110,7 @@ export function connectServer(me){
     try{
       SRV.status = 'connecting'; SRV.url = url;
       const ws = new WebSocket(url); SRV.ws = ws;
-      const to = setTimeout(() => { if (SRV.status!=='on'){ try{ ws.close(); }catch(e){} SRV.status='off'; finish(false); } }, 4000);
+      const to = setTimeout(() => { if (SRV.status!=='on'){ try{ ws.close(); }catch(e){} SRV.status='off'; finish(false); } }, 8000);
       ws.onopen = () => { ws.send(JSON.stringify({ t:'hello', v:PROTO, pid: me.pid, name: me.name, looks: me.looks })); };
       ws.onmessage = (ev) => {
         let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
