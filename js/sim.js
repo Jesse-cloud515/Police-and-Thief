@@ -51,8 +51,13 @@ export function newMatch(opts={}){
   for (let i=0;i<4;i++) G.ents.push(mkEnt(i,'P',pn[i],SPAWN_P[i]));
   for (let i=0;i<4;i++) G.ents.push(mkEnt(4+i,'T',tn[i],SPAWN_T[i]));
   const used = new Set();
-  for (const s of (opts.slots||[])){
-    let team = s.team==='R' ? (Math.random()<.5?'P':'T') : s.team;
+  // players who chose a side go first; players on 'Any' (R) then join whichever side has fewer
+  // humans, so a quick match between friends splits them fairly instead of by coin toss
+  const slots = (opts.slots||[]).slice().sort((a,b) => (a.team==='R') - (b.team==='R'));
+  const humansOn = t => G.ents.filter(x => x.team===t && used.has(x.id)).length;
+  for (const s of slots){
+    let team = s.team;
+    if (team==='R'){ const p = humansOn('P'), t = humansOn('T'); team = p<t ? 'P' : t<p ? 'T' : (Math.random()<.5?'P':'T'); }
     let e = G.ents.find(x => x.team===team && !used.has(x.id));
     if (!e){ team = team==='P'?'T':'P'; e = G.ents.find(x => x.team===team && !used.has(x.id)); }
     if (!e) continue;

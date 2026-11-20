@@ -37,8 +37,10 @@ setTimeout(() => {   // after the whole module has loaded
   applyCam();
   // first visit: offer the tutorial instead of a wall of text
   // phones are first asked how they want to hold the phone, then offered the tutorial
+  // opened from a friend's invite link: go straight to their room (the tutorial offer can wait)
+  if (pendingRoom && serverUrl()) setMode('online');
   if (!SAVE().orientAsked && isTouch()) show('orientDlg');
-  else if (!SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
+  else if (mode!=='online' && !SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
 }, 0);
 
 // ------------------------------------------------------------------ audio
@@ -181,7 +183,7 @@ function refreshHome(){
 document.querySelectorAll('#sideSeg button').forEach(b => b.onclick = () => { SAVE().side = b.dataset.side; M.persist(); buildPickers(); buildMapSeg(); sfx('tap'); });
 $('bPlay').onclick = () => startSolo(SAVE().side);
 $('bWard').onclick = () => { wardTeam='P'; setMode('ward'); };
-$('bOnline').onclick = () => setMode('online');
+$('bOnline').onclick = () => { onView = 'menu'; showBoard = false; setMode('online'); };
 $('bHow').onclick = () => { show('moreDlg', false); show('how'); };
 $('bStore').onclick = () => { show('moreDlg', false); openStore(); };
 $('hCoinBtn').onclick = () => openStore();
@@ -299,12 +301,16 @@ $('wBack').onclick = () => { S.showroom(SAVE().looks); setMode('home'); };
 // ------------------------------------------------------------------ online lobby
 function el(tag, cls, text){ const e=document.createElement(tag); if (cls) e.className=cls; if (text!=null) e.textContent=text; return e; }
 let showBoard = false, srvTried = false;
+let onView = 'menu';   // 'menu' (the two modes) or 'friends' (create / join a room)
+// a room code from an invite link (…?room=ABCD). Joined as soon as the server connects
+let pendingRoom = (new URLSearchParams(location.search).get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4) || null;
+if (pendingRoom){ try{ history.replaceState(null, '', location.pathname + location.hash); }catch(e){} }
 let onlineKey = '';
 function renderOnline(){
   const p = $('onPanel');
   // redraw only when what's on screen really changed, so taps never land on a button that was just replaced
   const L = SRV.lobby;
-  const key = [SRV.status, srvWaking, showBoard, !!NET.room, NET.available, L ? JSON.stringify({ ...L, startsIn:null }) : '', SRV.lb ? SRV.lb.length : -1, SAVE().side].join('|');
+  const key = [SRV.status, srvWaking, showBoard, onView, pendingRoom, !!NET.room, NET.available, L ? JSON.stringify({ ...L, startsIn:null }) : '', SRV.lb ? SRV.lb.length : -1, SAVE().side].join('|');
   if (key === onlineKey && p.childNodes.length){
     if (L && L.quick){ const c = p.querySelector('.code'); if (c) c.textContent = L.startsIn!=null ? `0:${String(L.startsIn).padStart(2,'0')}` : '…'; }
     return;
@@ -312,7 +318,11 @@ function renderOnline(){
   onlineKey = key;
   p.innerHTML='';
   const back = el('button','btn ghost','← Back'); back.style.cssText='padding:8px 12px;font-size:12px;margin-bottom:10px';
-  back.onclick = async () => { if (SRV.lobby){ srvSend({ t:'leave' }); SRV.lobby=null; } await leaveRoom(); showBoard=false; setMode('home'); }; p.appendChild(back);
+  back.onclick = async () => {
+    if (SRV.lobby){ srvSend({ t:'leave' }); SRV.lobby=null; renderOnline(); return; }
+    if (onView!=='menu' || showBoard){ onView='menu'; showBoard=false; renderOnline(); return; }
+    await leaveRoom(); setMode('home'); };
+  p.appendChild(back);
   p.appendChild(el('h2',null,'PLAY ONLINE'));
   // 1) public game server (when the game runs on its own website)
   if (serverUrl()){
@@ -327,17 +337,17 @@ function renderOnline(){
     }
     if (showBoard) return renderBoard(p);
     if (SRV.lobby) return renderSrvLobby(p);
-    p.appendChild(el('p',null,`Playing as ${SAVE().name}. Quick Match puts you with players from anywhere; bots fill empty places.`));
-    p.appendChild(sideSeg(k => {}));
-    const q = el('button','btn green','⚡ QUICK MATCH'); q.style.cssText='width:100%;font-size:20px'; q.onclick=()=>{ srvSend({ t:'quick', side: SAVE().side }); }; p.appendChild(q);
-    const row = el('div','row');
-    const mk = el('button','btn orange','CREATE ROOM'); mk.onclick=()=>srvSend({ t:'create', side: SAVE().side, map: SAVE().map||'random' }); row.appendChild(mk);
-    const lb = el('button','btn ghost','🏆 TOP 20'); lb.onclick=()=>{ showBoard=true; srvSend({ t:'lb' }); renderOnline(); }; row.appendChild(lb);
-    p.appendChild(row);
-    const inp = el('input','txt'); inp.maxLength=4; inp.placeholder='FRIEND\'S CODE'; inp.style.marginTop='12px'; p.appendChild(inp);
-    const jn = el('button','btn blue','JOIN ROOM'); jn.style.cssText='width:100%;margin-top:8px';
-    jn.onclick = () => { const c = inp.value.toUpperCase().replace(/[^A-Z0-9]/g,''); if (c.length!==4){ toast('Codes have 4 letters'); return; } srvSend({ t:'join', code:c, side: SAVE().side }); };
-    p.appendChild(jn);
+    if (pendingRoom){ const c = pendingRoom; pendingRoom = null; srvSend({ t:'join', code:c, side: SAVE().side }); p.appendChild(el('p',null,`Joining room ${c}…`)); return; }
+    if (onView === 'friends') return renderFriends(p);
+    p.appendChild(el('p','onlineAs',`Playing as ${SAVE().name}`));
+    // the two ways to play online, eFootball / Mini Militia style
+    const quick = modeTile('⚡', 'QUICK MATCH', 'Play with anyone online. Teams are picked for you and bots fill empty places.', 'green');
+    quick.onclick = () => srvSend({ t:'quick', side:'R' });
+    const friends = modeTile('👥', 'PLAY WITH FRIENDS', 'Make a room, send the code, choose your sides and the location.', 'orange');
+    friends.onclick = () => { onView = 'friends'; renderOnline(); };
+    p.appendChild(quick); p.appendChild(friends);
+    const lb = el('button','btn ghost','🏆 TOP 20 PLAYERS'); lb.style.cssText='width:100%;margin-top:4px'; lb.onclick=()=>{ showBoard=true; srvSend({ t:'lb' }); renderOnline(); };
+    p.appendChild(lb);
     return;
   }
   // 2) claude.ai rooms (when played inside claude.ai)
@@ -352,16 +362,66 @@ function sideSeg(cb){
   for (const [k,l] of [['P','🚓 Police'],['R','🎲 Any'],['T','🏃 Thief']]){ const b=el('button',null,l); b.dataset.side=k; b.classList.toggle('on', SAVE().side===k); b.onclick=()=>{ SAVE().side=k; M.persist(); cb(k); renderOnline(); }; seg.appendChild(b); }
   return seg;
 }
+function modeTile(icon, title, text, col){
+  const b = el('button','modeTile '+col);
+  b.appendChild(el('span','mi',icon));
+  const t = el('span','mt'); t.appendChild(el('b',null,title)); t.appendChild(el('em',null,text)); b.appendChild(t);
+  return b;
+}
+function renderFriends(p){
+  p.appendChild(el('p',null,'Make a room and send the code to your friends, or type the code a friend sent you.'));
+  const mk = el('button','btn orange','➕ CREATE ROOM'); mk.style.cssText='width:100%;font-size:18px';
+  mk.onclick = () => srvSend({ t:'create', side: SAVE().side, map: SAVE().map || 'random' });
+  p.appendChild(mk);
+  p.appendChild(el('p','orLine','or join a friend'));
+  const inp = el('input','txt'); inp.maxLength=4; inp.placeholder='ROOM CODE'; inp.autocomplete='off'; p.appendChild(inp);
+  const jn = el('button','btn blue','JOIN ROOM'); jn.style.cssText='width:100%;margin-top:8px';
+  const go = () => { const c = inp.value.toUpperCase().replace(/[^A-Z0-9]/g,''); if (c.length!==4){ toast('Room codes have 4 letters'); return; } srvSend({ t:'join', code:c, side: SAVE().side }); };
+  jn.onclick = go; inp.onkeydown = e => { if (e.key==='Enter') go(); };
+  p.appendChild(jn);
+}
+// the link a friend taps to land straight in your room
+const inviteLink = code => location.origin + location.pathname + '?room=' + code;
+async function shareInvite(code){
+  const text = `Join my Police & Thief game! Room code: ${code}`;
+  const url = inviteLink(code);
+  if (navigator.share){ try{ await navigator.share({ title:'Police & Thief: Naija Streets', text, url }); return; }catch(e){ if (e && e.name==='AbortError') return; } }
+  open('https://wa.me/?text=' + encodeURIComponent(text + '\n' + url), '_blank');
+}
 function renderSrvLobby(p){
   const L = SRV.lobby;
-  if (L.quick){ p.appendChild(el('p',null,'⚡ Quick Match')); p.appendChild(el('div','code', L.startsIn!=null ? `0:${String(L.startsIn).padStart(2,'0')}` : '…')); p.appendChild(el('p',null,'Starting soon. Bots fill any empty places.')).style.textAlign='center'; }
-  else { p.appendChild(el('p',null,'Room code — tell your friends:')); p.appendChild(el('div','code', L.code)); }
-  p.appendChild(sideSeg(k => srvSend({ t:'team', side:k })));
+  if (L.quick){
+    p.appendChild(el('p',null,'⚡ Quick Match'));
+    p.appendChild(el('div','code', L.startsIn!=null ? `0:${String(L.startsIn).padStart(2,'0')}` : '…'));
+    p.appendChild(el('p',null,'Finding players. Teams are picked for you, and bots fill any empty places.')).style.textAlign='center';
+  } else {
+    p.appendChild(el('p',null, L.you==='host' ? '👥 Your room. Send this code to your friends:' : "👥 You're in a friend's room. Invite more people with this code:")).style.textAlign='center';
+    const code = el('div','code', L.code); code.title = 'Tap to copy'; p.appendChild(code);
+    const copy = () => { (navigator.clipboard ? navigator.clipboard.writeText(L.code) : Promise.reject()).then(() => toast('Code copied'), () => toast('Code: ' + L.code)); };
+    code.onclick = copy;
+    const row = el('div','row');
+    const inv = el('button','btn green','📤 INVITE'); inv.onclick = () => shareInvite(L.code); row.appendChild(inv);
+    const cp = el('button','btn ghost','📋 COPY CODE'); cp.onclick = copy; row.appendChild(cp);
+    p.appendChild(row);
+    // location: the host chooses, everyone else sees the choice
+    const mapName = id => id==='random' || !MAPS[id] ? '🎲 Random' : MAPS[id].icon + ' ' + MAPS[id].short;
+    if (L.you==='host'){
+      p.appendChild(el('p','lbl','Location'));
+      const seg = el('div','seg mapSeg');
+      for (const id of ['random', ...MAP_IDS]){ const b = el('button', null, mapName(id)); b.classList.toggle('on', (L.map||'random')===id); b.onclick = () => srvSend({ t:'map', map:id }); seg.appendChild(b); }
+      p.appendChild(seg);
+    } else p.appendChild(el('p','lbl','Location: ' + mapName(L.map || 'random')));
+    p.appendChild(el('p','lbl','Your side'));
+    p.appendChild(sideSeg(k => srvSend({ t:'team', side:k })));
+  }
   const list = el('div','plist');
-  for (const pl of L.players){ const r=el('div','pl'); r.appendChild(el('span',null,(pl.host&&!L.quick?'👑 ':'')+pl.name)); r.appendChild(el('span','t t'+pl.tm, pl.tm==='P'?'POLICE':pl.tm==='T'?'THIEF':'ANY')); list.appendChild(r); }
+  for (const pl of L.players){ const r=el('div','pl'); r.appendChild(el('span',null,(pl.host&&!L.quick?'👑 ':'')+pl.name)); r.appendChild(el('span','t t'+pl.tm, L.quick ? 'AUTO' : pl.tm==='P'?'POLICE':pl.tm==='T'?'THIEF':'ANY')); list.appendChild(r); }
   for (let i=L.players.length;i<8;i++){ const r=el('div','pl'); r.style.opacity=.4; r.appendChild(el('span',null,'🤖 Bot')); list.appendChild(r); }
   p.appendChild(list);
-  if (!L.quick && L.you==='host'){ const go=el('button','btn green','START MATCH'); go.style.width='100%'; go.onclick=()=>srvSend({ t:'start' }); p.appendChild(go); }
+  if (!L.quick && L.you==='host'){
+    const go=el('button','btn green','▶ START MATCH'); go.style.cssText='width:100%;font-size:18px'; go.onclick=()=>srvSend({ t:'start' }); p.appendChild(go);
+    if (L.players.length < 2) p.appendChild(el('p','lbl','You can start alone; bots take the empty places.')).style.textAlign='center';
+  }
   else if (!L.quick) p.appendChild(el('p',null,'Waiting for the host to start…')).style.textAlign='center';
   const lv = el('button','btn ghost','LEAVE'); lv.style.cssText='width:100%;margin-top:8px'; lv.onclick=()=>{ srvSend({ t:'leave' }); SRV.lobby=null; renderOnline(); }; p.appendChild(lv);
 }
@@ -950,7 +1010,7 @@ function tryLock(){
 function setOrient(o){ SAVE().settings.orient = o; M.persist(); tryLock(); checkRotate(); setTimeout(() => { S.resize(); checkRotate(); }, 400); }
 document.querySelectorAll('.ochoice').forEach(b => b.onclick = () => {
   SAVE().orientAsked = true; setOrient(b.dataset.or); show('orientDlg', false);
-  if (!SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
+  if (mode!=='online' && !SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
 });
 $('rotSwitch').onclick = () => { setOrient(innerWidth > innerHeight ? 'landscape' : 'portrait'); syncSettings(); };
 function checkRotate(){

@@ -1,5 +1,5 @@
 // Offline support: the game shell is cached so it opens fast and works with bad network.
-const VERSION = 'pt-v8-2';
+const VERSION = 'pt-v8-3';
 const SHELL = ['./', './index.html', './css/style.css', './config.js', './manifest.webmanifest',
   './js/main.js','./js/world.js','./js/sim.js','./js/meta.js','./js/chars.js','./js/scene.js','./js/net.js','./js/ads.js','./js/details.js','./js/tutorial.js','./js/controls.js','./js/store.js','./js/products.js','./audio/theme.mp3',
   './icons/icon-192.png','./icons/icon-512.png'];

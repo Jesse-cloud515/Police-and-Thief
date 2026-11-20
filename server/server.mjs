@@ -152,7 +152,7 @@ function makeRoom(isPublic){
 }
 function lobbyMsg(r){
   return { t:'lobby', code: r.code, quick: r.isPublic, startsIn: r.startAt ? Math.max(0, Math.ceil((r.startAt-Date.now())/1000)) : null,
-    players: r.players.map(c => ({ name:c.name, tm:c.side, host: c.pid===r.hostPid })) };
+    map: r.map || 'random', players: r.players.map(c => ({ name:c.name, tm:c.side, host: c.pid===r.hostPid })) };
 }
 function broadcastLobby(r){ for (const c of r.players) send(c, { ...lobbyMsg(r), you: c.pid===r.hostPid ? 'host' : 'guest' }); }
 function joinRoom(c, r){
@@ -254,10 +254,13 @@ wss.on('connection', (ws) => {
         c.pid = String(m.pid||'').replace(/[^\w-]/g,'').slice(0,40) || Math.random().toString(36).slice(2);
         c.name = clean(m.name); c.looks = m.looks ? { P: cleanLook(m.looks.P), T: cleanLook(m.looks.T) } : null;
         send(c, { t:'welcome' }); break;
-      case 'quick': c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; joinRoom(c, quickRoom()); break;
+      // quick match always auto-assigns: the server balances the two sides
+      case 'quick': c.side = 'R'; joinRoom(c, quickRoom()); break;
       case 'create': { c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; const r = makeRoom(false); r.map = typeof m.map==='string' ? m.map : 'random'; r.hostPid = c.pid; joinRoom(c, r); break; }
       case 'join': { const r = rooms.get(String(m.code||'').toUpperCase()); if (!r || r.isPublic) return send(c, { t:'err', msg:'No room with that code' }); c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; joinRoom(c, r); break; }
-      case 'team': if (c.room && c.room.state==='lobby'){ c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; broadcastLobby(c.room); } break;
+      // the host of a friends' room picks the location ('random' or a map id from world.js)
+      case 'map': if (c.room && !c.room.isPublic && c.room.state==='lobby' && c.room.hostPid===c.pid){ c.room.map = MAPS[m.map] ? m.map : 'random'; broadcastLobby(c.room); } break;
+      case 'team': if (c.room && !c.room.isPublic && c.room.state==='lobby'){ c.side = ['P','T','R'].includes(m.side) ? m.side : 'R'; broadcastLobby(c.room); } break;
       case 'start': if (c.room && c.room.state==='lobby' && c.room.hostPid===c.pid) startMatch(c.room); break;
       case 'leave': leaveRoom(c); break;
       case 'in': {
