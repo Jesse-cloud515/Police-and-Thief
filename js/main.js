@@ -2,7 +2,7 @@
 // MAIN: screens, controls, the game loop, HUD, sound and music.
 // =============================================================
 import { CFG, W, H, OB, PRISON, PC, EXITS, HIDES, GATES, collide, inHide, inExit, gateNear, dist, SHOPS, shopNear, BALL_HOME, MAP, MAPS, MAP_IDS, setMap, ROADS, pushFromHerd } from './world.js';
-import { G, newMatch, step, CHAT, LINES, REASONS, nearestCapturable, countJailed } from './sim.js';
+import { G, newMatch, step, CHAT, LINES, REASONS, nearestCapturable, countJailed, staminaStep } from './sim.js';
 import * as M from './meta.js';
 import * as S from './scene.js';
 import { ADS } from './ads.js';
@@ -36,7 +36,9 @@ setTimeout(() => {   // after the whole module has loaded
   goHome();
   applyCam();
   // first visit: offer the tutorial instead of a wall of text
-  if (!SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
+  // phones are first asked how they want to hold the phone, then offered the tutorial
+  if (!SAVE().orientAsked && isTouch()) show('orientDlg');
+  else if (!SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
 }, 0);
 
 // ------------------------------------------------------------------ audio
@@ -234,10 +236,12 @@ function renderAch(){
 }
 function syncSettings(){
   const st = SAVE().settings;
+  $('sOrient').textContent = 'Screen: ' + (st.orient === 'landscape' ? 'SIDEWAYS' : 'UPRIGHT');
   $('sQual').textContent = 'Graphics: ' + ({auto:'AUTO', high:'HIGH', low:'LOW (faster)'}[st.quality]||'AUTO');
   $('sCam').textContent = 'Camera: ' + (CAMS[st.cam]||CAMS.normal)[1];
   $('sSound').textContent = 'Sound: ' + (st.sound?'ON':'OFF'); $('sMusic').textContent = 'Music: ' + (st.music?'ON':'OFF'); $('sShake').textContent = 'Screen shake: ' + (st.shake?'ON':'OFF');
 }
+$('sOrient').onclick = () => { setOrient(SAVE().settings.orient === 'landscape' ? 'portrait' : 'landscape'); syncSettings(); };
 $('sQual').onclick = () => { const st=SAVE().settings; st.quality = st.quality==='auto' ? 'high' : st.quality==='high' ? 'low' : 'auto'; M.persist(); applyQuality(); syncSettings(); };
 $('sSound').onclick = () => { SAVE().settings.sound = !SAVE().settings.sound; M.persist(); syncSettings(); syncPauseBtns(); };
 $('sMusic').onclick = () => { SAVE().settings.music = !SAVE().settings.music; musicOn = SAVE().settings.music; M.persist(); syncSettings(); syncPauseBtns(); };
@@ -475,11 +479,13 @@ const TUT = createTutorial({
   pause: on => { if (MC) MC.paused = on; },
   begin: me => { me.look = SAVE().looks[me.team]; prepViews(G.ents); beginMatch({ kind:'solo', tut:true, meId: me.id, side: me.team, ents: () => G.ents, state: () => G }); },
 });
-function startTutorial(){ initAudio(); TUT.start(); }
+function startTutorial(){ initAudio(); tryLock(); TUT.start(); }
 $('tutPlay').onclick = () => { show('tutEnd', false); TUT.stop(); startSolo(SAVE().side); };
 $('tutHome').onclick = () => { show('tutEnd', false); TUT.stop(); goHome(); };
 $('tutSkip').onclick = () => { TUT.stop(); goHome(); };
+$('tutOk').onclick = () => TUT.infoOk();
 function startSolo(side, night){
+  tryLock();
   initAudio();
   const map = pickMap(); useMap(map);
   newMatch({ slots:[{ team:side, ctrl:'local', name:SAVE().name }], night, diff: M.soloDifficulty(), map });
@@ -601,8 +607,8 @@ function guestPredict(dt, inp){
   if (inp.ability && me.abCd<=0 && g.M.phase==='play'){ me.ab++; me.abCd = e.team==='T' ? CFG.dashCd : CFG.whistleCd; if (e.team==='T') me.dashT = CFG.dashTime; }
   let spd = (e.team==='P'?CFG.walkP:CFG.walkT)*mag, sprinting=false;
   if (me.stam<=1) me.tired=true; else if (me.stam>=30) me.tired=false;
-  if (inp.sprint && mag>.2 && me.stam>0 && !me.tired){ spd=(e.team==='P'?CFG.sprintP:CFG.sprintT)*Math.max(mag,.85); me.stam=Math.max(0,me.stam-(e.team==='P'?CFG.drainP:CFG.drainT)*dt); me.stDelay=.8; sprinting=true; }
-  else { me.stDelay-=dt; if (me.stDelay<=0) me.stam=Math.min(100, me.stam+(e.team==='P'?CFG.regenP:CFG.regenT)*dt); }
+  const wantSprint = inp.sprint && mag>.2 && me.stam>0 && !me.tired;
+  if (wantSprint) spd=(e.team==='P'?CFG.sprintP:CFG.sprintT)*Math.max(mag,.85);
   if (e.reassigned) spd*=.55; if (e.slowT) spd*=.6; if (e.immune) spd*=1.1; if (e.boostT) spd*=CFG.zoboBoost;
   if (e.fullT) me.stam = Math.max(me.stam, 100);
   let tx=mx*spd, ty=my*spd;
@@ -611,6 +617,9 @@ function guestPredict(dt, inp){
   const ox=me.x, oy=me.y; me.x += me.vx*dt; me.y += me.vy*dt; collide(me);
   if (g.M.herd && g.M.herd.p >= 0) pushFromHerd(me, g.M.herd.p);
   const rvx=(me.x-ox)/dt, rvy=(me.y-oy)/dt;
+  sprinting = wantSprint && Math.hypot(rvx,rvy) > (e.team==='P'?CFG.walkP:CFG.walkT)*.9;
+  me.stDelay = me.stDelay ?? 0;
+  me.stam = staminaStep(e.team, me.stam, sprinting && !e.fullT, wantSprint, me, dt);
   if (mag>.1 && me.dashT<=0){ me.fx=mx/mag; me.fy=my/mag; }
   if (inp.press) me.ps++;
   e.x=me.x; e.y=me.y; e.fx=me.fx; e.fy=me.fy; e.speed=Math.hypot(rvx,rvy); e.sprinting=sprinting; e.stam=me.stam; e.abCd=me.abCd; e.dashT=me.dashT;
@@ -761,6 +770,7 @@ function updateHUD(dt, t){
   $('bAbil').querySelector('.cd').style.setProperty('--p', Math.round((me.abCd||0)/cdMax*100)+'%');
   $('stamBar').firstChild.style.width = Math.round(me.stam??100)+'%';
   $('stamBar').firstChild.style.background = me.tired ? '#ff9f43' : '#3ddc84';
+  $('bRun').classList.toggle('tired', !!me.tired);
   const hint = $('hint');
   if (me.team==='T' && me.hidden && me.state==='free'){ hint.textContent='🌿 HIDDEN — walk, don\'t sprint'; show('hint'); }
   else if (me.state==='jailed'){ hint.textContent='⛓ In the Post. Quick-chat "Help me!"'; show('hint'); }
@@ -911,9 +921,31 @@ function loop(){
 }
 requestAnimationFrame(loop);
 
+// ------------------------------------------------------------------ portrait / landscape
+// settings.orient is 'portrait' (upright) or 'landscape' (sideways). On phones the game asks the
+// browser to hold that orientation (works in full screen on Android); where it can't, a "turn your
+// phone" screen shows until the phone is the right way round.
+const isTouch = () => matchMedia('(pointer:coarse)').matches;
+function tryLock(){
+  const want = SAVE().settings.orient === 'landscape' ? 'landscape' : 'portrait';
+  if (!isTouch() || !screen.orientation || !screen.orientation.lock) return;
+  if (want === 'portrait' && !document.fullscreenElement) return;   // upright needs no full screen; the turn-your-phone screen is enough
+  const lock = () => screen.orientation.lock(want).catch(() => {});
+  if (document.fullscreenElement) lock();
+  else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen({ navigationUI:'hide' }).then(lock).catch(() => {});
+}
+function setOrient(o){ SAVE().settings.orient = o; M.persist(); tryLock(); checkRotate(); setTimeout(() => { S.resize(); checkRotate(); }, 400); }
+document.querySelectorAll('.ochoice').forEach(b => b.onclick = () => {
+  SAVE().orientAsked = true; setOrient(b.dataset.or); show('orientDlg', false);
+  if (!SAVE().tutDone && !SAVE().tutAsked){ show('firstDlg'); SAVE().tutAsked = true; M.persist(); }
+});
+$('rotSwitch').onclick = () => { setOrient(innerWidth > innerHeight ? 'landscape' : 'portrait'); syncSettings(); };
 function checkRotate(){
-  const touch = matchMedia('(pointer:coarse)').matches;
-  show('rotate', touch && innerWidth > innerHeight*1.15);
+  const land = SAVE().settings.orient === 'landscape';
+  const wrong = land ? innerHeight > innerWidth*1.15 : innerWidth > innerHeight*1.15;
+  $('rotate').classList.toggle('land', land);
+  $('rotText').innerHTML = land ? 'Turn your phone sideways<br>to play' : 'Turn your phone upright<br>to play';
+  show('rotate', isTouch() && wrong && $('orientDlg').classList.contains('hidden'));
 }
 checkRotate();
 window.PTG = { get G(){ return G; }, get MC(){ return MC; }, startSolo, step, SAVE, SRV, TUT };

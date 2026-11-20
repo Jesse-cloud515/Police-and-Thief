@@ -257,6 +257,12 @@ function updateSight(){
   }
 }
 
+// one place for the stamina rules, used here and by online guests' own prediction
+export function staminaStep(team, stam, draining, wantSprint, s, dt){
+  if (draining){ s.stDelay = CFG.regenDelay; return Math.max(0, stam - (team==='P'?CFG.drainP:CFG.drainT)*dt); }
+  if (!wantSprint || stam <= 0) s.stDelay -= dt;
+  return s.stDelay <= 0 ? Math.min(100, stam + (team==='P'?CFG.regenP:CFG.regenT)*dt) : stam;
+}
 function tickTimers(e,dt){
   e.capCd = Math.max(0,e.capCd-dt); e.immune = Math.max(0,e.immune-dt);
   e.reassigned = Math.max(0,e.reassigned-dt); e.freeze = Math.max(0,e.freeze-dt);
@@ -301,11 +307,8 @@ function applyEnt(e,inp,dt){
   if (!frozen && inp.ability) useAbility(e);
   let spd = (e.team==='P'?CFG.walkP:CFG.walkT)*mag; e.sprinting=false;
   if (e.stam<=1) e.tired=true; else if (e.stam>=30) e.tired=false;
-  if (inp.sprint && mag>.2 && e.stam>0 && !e.tired){
-    spd = (e.team==='P'?CFG.sprintP:CFG.sprintT)*Math.max(mag,.85);
-    if (!(e.fullT>0)) e.stam = Math.max(0, e.stam-(e.team==='P'?CFG.drainP:CFG.drainT)*dt);
-    e.stDelay=.8; e.sprinting=true;
-  } else { e.stDelay-=dt; if (e.stDelay<=0) e.stam=Math.min(100,e.stam+(e.team==='P'?CFG.regenP:CFG.regenT)*dt); }
+  const wantSprint = inp.sprint && mag>.2 && e.stam>0 && !e.tired;
+  if (wantSprint) spd = (e.team==='P'?CFG.sprintP:CFG.sprintT)*Math.max(mag,.85);
   if (e.reassigned>0) spd *= .55;
   if (e.windup>0) spd *= .5;
   if (e.slowT>0) spd *= .6;
@@ -323,6 +326,10 @@ function applyEnt(e,inp,dt){
   e.x += e.vx*dt; e.y += e.vy*dt; collide(e);
   if (dt>0){ e.rvx=(e.x-ox)/dt; e.rvy=(e.y-oy)/dt; }
   e.speed = Math.hypot(e.rvx,e.rvy);
+  // stamina: only spent while actually running faster than a walk (not when pressed against a wall,
+  // frozen or stuck), and it starts coming back shortly after you stop
+  e.sprinting = wantSprint && e.speed > (e.team==='P'?CFG.walkP:CFG.walkT)*e.mul*.9;
+  e.stam = staminaStep(e.team, e.stam, e.sprinting && !(e.fullT>0), wantSprint, e, dt);
   if (mag>.1 && e.dashT<=0){ e.fx=mx/mag; e.fy=my/mag; }
   e.hidden = e.team==='T' && !e.sprinting && e.dashT<=0 && inHide(e.x,e.y);
   if (frozen && G.phase==='count') return;

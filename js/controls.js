@@ -11,7 +11,7 @@
 export const DEFAULT_CTL = {
   joy: 'float',          // 'float' (appears where you touch) | 'fixed'
   joySize: 1,            // 0.8 | 1 | 1.25
-  sprint: 'auto',        // 'auto' (push the stick to the edge) | 'hold' | 'tap'
+  sprint: 'hold',        // 'hold' (sprint while holding the SPRINT button) | 'tap' (button switches it on/off) | 'auto' (push the stick to the edge)
   hand: 'right',         // 'right' = move with the left thumb | 'left' = mirrored
   btnSize: 1,            // 0.8 | 1 | 1.2
   opacity: 0.85,         // buttons and stick, 0.4 to 1
@@ -32,6 +32,8 @@ export function ctl(){
   const c = cfgGet();
   for (const k in DEFAULT_CTL) if (c[k] === undefined) c[k] = JSON.parse(JSON.stringify(DEFAULT_CTL[k]));
   for (const k in DEFAULT_CTL.keys) if (!c.keys[k]) c.keys[k] = DEFAULT_CTL.keys[k];
+  // once: stick-edge sprint used to be the default and made players sprint (and tire) without meaning to
+  if (!c.v2){ c.v2 = true; if (c.sprint === 'auto') c.sprint = 'hold'; }
   return c;
 }
 
@@ -210,13 +212,13 @@ function makeDraggable(id, key){
 const OPT = {
   joy: [['float', 'Floating'], ['fixed', 'Fixed']],
   joySize: [[0.8, 'Small'], [1, 'Medium'], [1.25, 'Large']],
-  sprint: [['auto', 'Stick edge'], ['hold', 'Hold RUN'], ['tap', 'Tap RUN']],
+  sprint: [['hold', 'Hold button'], ['tap', 'Tap button'], ['auto', 'Stick edge']],
   hand: [['right', 'Move left'], ['left', 'Move right']],
   btnSize: [[0.8, 'Small'], [1, 'Medium'], [1.2, 'Large']],
 };
 const HELP = {
   joy: { float: 'Appears wherever you put your thumb, and follows it.', fixed: 'Stays in one spot. Drag it in Edit layout.' },
-  sprint: { auto: 'Push the stick all the way out to sprint. No RUN button.', hold: 'Sprint while you hold RUN.', tap: 'Tap RUN to switch sprint on and off.' },
+  sprint: { auto: 'Push the stick all the way out to sprint. No SPRINT button.', hold: 'Sprint while you hold the SPRINT button.', tap: 'Tap SPRINT to switch sprinting on and off.' },
 };
 export function renderControlSettings(box){
   const c = ctl(); box.innerHTML = '';

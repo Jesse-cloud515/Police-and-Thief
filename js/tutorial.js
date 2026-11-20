@@ -1,11 +1,13 @@
 // =============================================================
 // TUTORIAL: a short guided practice on Naija Street, about a minute.
-// Part 1 as a thief: move, sprint, pick up ₦, buy, hide, free a
-// friend, escape. Part 2 as police: catch a thief.
+// Part 1 as a thief: move, sprint, pick up ₦, buy, what each power-up
+// does, zobo, Dash, hide, free a friend, escape.
+// Part 2 as police: the Whistle, then catch a thief.
+// A step with `info` is a card the player reads and closes with "Got it".
 // The other characters stand still (or walk slowly) so the player can
 // learn without being chased. Nothing here changes the normal rules.
 // =============================================================
-import { HIDES, GATES, EXITS, SHOPS, PRISON, freePt, solidAt, dist, W, H } from './world.js';
+import { HIDES, GATES, EXITS, SHOPS, PRISON, freePt, solidAt, dist, W, H, CFG } from './world.js';
 import { G, newMatch } from './sim.js';
 import * as S from './scene.js';
 import { ctl, vibrate } from './controls.js';
@@ -40,13 +42,29 @@ export function createTutorial(api){
   const THIEF = [
     { text: () => `Put your thumb on the ${ctl().hand === 'left' ? 'right' : 'left'} side of the screen and drag to run` + (touch() ? '' : ' (or use WASD / arrow keys)'),
       setup(){ T.d.start = { x: me().x, y: me().y }; }, done: () => dist(me(), T.d.start) > 4 },
-    { text: () => ({ auto: 'Push the stick all the way out to sprint', hold: 'Hold RUN while you move to sprint', tap: 'Tap RUN, then move to sprint' })[ctl().sprint] + (touch() ? '' : ' (or hold Shift)'),
+    { text: () => ({ auto: 'Push the stick all the way out to sprint', hold: 'Hold ⚡ SPRINT while you move. Sprinting uses energy (the bar at the bottom); walking gets it back', tap: 'Tap ⚡ SPRINT, then move. Sprinting uses energy (the bar at the bottom); walking gets it back' })[ctl().sprint] + (touch() ? '' : ' (or hold Shift)'),
       setup(){ T.d.spr = 0; if (ctl().sprint !== 'auto') hl('bRun'); }, tick(dt){ if (me().sprinting) T.d.spr += dt; }, done: () => T.d.spr > 1.2 },
     { text: () => 'Money lies on the street. Pick up the green ₦ note',
       setup(){ const p = spotNear(me(), 6); G.notes.push({ id: ++G.noteId, x: p.x, y: p.y }); T.target = p; }, done: () => me().wallet >= 10 },
     { text: () => `Shops sell food that helps you run. Stand in the green ring at ${T.d.shop.b.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())} and tap BUY`,
       setup(){ const m = me(); T.d.shop = nearest(SHOPS.filter(s => s.price <= 20), m) || nearest(SHOPS, m); m.wallet = Math.max(m.wallet, T.d.shop.price); T.target = T.d.shop; hl('bAct'); },
       done: () => me().stats.buys >= 1 },
+    { info: true, text: () => 'POWER-UPS: what each one does',
+      list: () => [
+        ['🍛', 'Jollof, rice and stew, small chops, moi moi, pepper soup', `Belle full: energy goes to full and you don't tire for ${CFG.fullTime} seconds`],
+        ['💧', 'Pure water, kunu, zobo drink', 'Energy back up by 60'],
+        ['🍢', 'Suya', `Run ${Math.round((CFG.zoboBoost-1)*100)}% faster for ${CFG.suyaTime} seconds`],
+        ['⚡', 'Glucose, chin-chin, mint sweet', 'Your Dash (or Whistle) is ready again straight away'],
+        ['🍞', 'Agege bread on the street (free)', 'Energy straight back to full'],
+        ['🧃', 'Zobo bottle on the street (free)', `Run faster for ${CFG.zoboTime} seconds`],
+        ['💨', 'Dash (thieves)', `A quick burst. Use it when a policeman grabs you. Ready again after ${CFG.dashCd} seconds`],
+        ['📯', 'Whistle (police)', `Slows every thief near you and pulls them out of hiding. Ready again after ${CFG.whistleCd} seconds`],
+      ] },
+    { text: () => 'Free power-ups turn up on the street. Grab the zobo bottle to run faster',
+      setup(){ const p = spotNear(me(), 6); G.pickups.push({ id: ++G.pickId, k: 'zobo', x: p.x, y: p.y }); T.target = p; T.d.zobo = G.pickId; },
+      done: () => !G.pickups.some(p => p.id === T.d.zobo) },
+    { text: () => 'Your special move is Dash 💨. Tap it while running to burst forward' + (touch() ? '' : ' (or press Q)'),
+      setup(){ me().abCd = 0; hl('bAbil'); }, done: () => me().stats.abil >= 1 },
     { text: () => "Police can't see you under trees. Walk under the tree (don't sprint)",
       setup(){ T.d.hid = 0; T.target = nearest(HIDES, me()); }, tick(dt){ if (me().hidden) T.d.hid += dt; }, done: () => T.d.hid > 1 },
     { text: () => `${T.d.friend.name} is locked in the Police Post. Stand at the gate and HOLD the big button`,
@@ -56,7 +74,9 @@ export function createTutorial(api){
       done: () => me().state === 'escaped' },
   ];
   const POLICE = [
-    { text: () => "Now you're the police. Run at the thief: you grab him automatically when you get close",
+    { text: () => "Now you're the police. Your special move is the Whistle 📯. Get near the thief and blow it to slow him down" + (touch() ? '' : ' (or press Q)'),
+      setup(){ me().abCd = 0; hl('bAbil'); }, tick(){ const t = T.d.runner; T.target = { x: t.x, y: t.y }; }, done: () => me().stats.abil >= 1 },
+    { text: () => "Now catch him. Run at the thief: you grab him automatically when you get close",
       setup(){ }, tick(){ const t = T.d.runner; T.target = { x: t.x, y: t.y }; }, done: () => me().stats.caps >= 1 },
   ];
 
@@ -88,8 +108,20 @@ export function createTutorial(api){
     $('tutStep').textContent = `${T.part === 1 ? '🏃 THIEF' : '🚓 POLICE'} · STEP ${n} OF ${total}`;
     s.setup && s.setup();
     $('tutText').textContent = s.text();
+    const info = $('tutInfo'); info.innerHTML = '';
+    $('tut').classList.toggle('info', !!s.info);
+    if (s.info){
+      for (const [icon, name, what] of s.list()){
+        const r = document.createElement('div'); r.className = 'pu';
+        const i = document.createElement('span'); i.textContent = icon;
+        const t = document.createElement('div'); const b = document.createElement('b'); b.textContent = name; t.appendChild(b); t.appendChild(document.createTextNode(what));
+        r.appendChild(i); r.appendChild(t); info.appendChild(r);
+      }
+      T.d.infoOk = false;
+    }
   }
   function passed(){
+    $('tut').classList.remove('info'); $('tutInfo').innerHTML = '';
     $('tut').classList.add('ok'); $('tutText').textContent = '✔ ' + ['Nice!', 'Correct!', 'Sharp guy!', 'Na so!'][T.i % 4];
     api.sfx('chime'); vibrate(40); hl(null); T.target = null;
     T.okT = .9;
@@ -112,6 +144,7 @@ export function createTutorial(api){
 
   return {
     get active(){ return T.active; },
+    infoOk(){ T.d.infoOk = true; },
     start(){
       T.active = true; T.d = {};
       document.body.classList.add('tutorial');
@@ -136,6 +169,7 @@ export function createTutorial(api){
       if (!T.active || !G || !G.tutorial) return;
       const s = T.list[T.i];
       if (T.okT > 0){ T.okT -= dt; if (T.okT <= 0) next(); }
+      else if (s.info){ if (T.d.infoOk){ T.d.infoOk = false; T.okT = .01; $('tut').classList.remove('info'); $('tutInfo').innerHTML = ''; } }
       else { s.tick && s.tick(dt); if (s.done()) passed(); }
       // the yellow marker on the ground, and an arrow at the screen edge when it's off screen
       const g = T.target; S.setGuide(g ? g.x : null, g ? g.y : null);

@@ -145,7 +145,7 @@ function fresh(){
     owned:['p_npf','pberet','p_navy','cap','none','t_bw','bandana','cheer'], looks: JSON.parse(JSON.stringify(DEFAULT_LOOK)),
     missions:{ date:'', list:[] }, streak:{ last:'', count:0, claimedToday:false },
     stats:{ games:0, wins:0, caps:0, frees:0, escapes:0, best:0, dodges:0, nightGames:0, nightWins:0, online:0, winStreak:0, loseStreak:0 },
-    side:'R', map:'street', settings:{ shake:true, sound:true, music:true, quality:'auto' },
+    side:'R', map:'street', settings:{ shake:true, sound:true, music:true, quality:'auto', orient:'portrait' },
     pass:{ xp:0, claimed:[] }, ach:{ claimed:[] }, firstWinDate:'' };
 }
 function migrate(s){

@@ -12,8 +12,9 @@ export const CFG = {
   revealDay: 2.6, revealNight: 2.1,
   walkT: 5.9, walkP: 4.7,        // faster than the first prototype (+35%)
   sprintT: 8.7, sprintP: 7.0,
-  drainT: 24, drainP: 25,        // stamina per second (max 100)
+  drainT: 26, drainP: 25,        // stamina per second (max 100)
   regenT: 18, regenP: 10,        // thieves recover faster: police must work as a team
+  regenDelay: 0.8,               // seconds after you stop sprinting before stamina starts coming back
   captureRange: 1.05, captureConfirm: 1.4, captureWindup: 0.4,
   captureCooldown: 1.3, arrestFreeze: 0.8, escortTime: 3.5,
   rescueTime: 1.5, rescueRange: 1.35,
@@ -63,6 +64,9 @@ export const MAPS = {
     exits: ['MOTOR PARK','EXPRESSWAY','OKADA PARK','MARKET ROAD'],
     shops: [['MAMA PUT','Jollof rice',30,'full','🍛','pots'], ['IYA BISI STORES','Pure water',10,'water','💧','store'], ['SUYA SPOT','Suya',40,'boost','🍢','suya'],
             ['CHEMIST','Glucose',20,'ready','⚡','chemist'], ['VIEWING CENTRE','Cold kunu',10,'water','🥛','cooler'], ['OWAMBE HALL','Small chops',30,'full','🍗','chops']],
+    // parked cars, a kiosk and a cooler: solid like the danfos. Written the normal way round: [x, y, w, h, kind, label, colour]
+    props: [[11.2,21.7,1.3,2.6,'car','','#c0392b'], [11.2,45.7,1.3,2.6,'car','','#2e86de'], [28.7,38.65,2.6,1.3,'car','','#eeeeee'],
+            [3.8,45.8,1.4,1,'kiosk','','#2e86de'], [18.95,48.95,1.1,.7,'cooler','','#e0601f']],
     ground:'#c98450', show:[33,28], herd:{ x0:10.45, y0:-5, x1:10.45, y1:69 },
   },
   market: {
@@ -214,7 +218,8 @@ export function setMap(id){
   if (MAP.id === id) return;
   for (const k of Object.keys(MAP)) delete MAP[k];
   Object.assign(MAP, { id, name:m.name, icon:m.icon, ground:m.ground, show:m.show, herd:m.herd||null, bell:m.bell||null, gaps:m.gaps||null, noteMax:m.noteMax||0, ball:!!m.pitch });
-  fill(OB, m.ob.map(a => ({ x:a[0], y:a[1], w:a[2], h:a[3], k:a[4], label:a[5], col:a[6] })));
+  fill(OB, m.ob.concat(m.props || []).map(a => ({ x:a[0], y:a[1], w:a[2], h:a[3], k:a[4], label:a[5], col:a[6] })));
+  OB.push(...vehicleGapFillers(OB));
   fill(SOLIDS, OB.concat([{ ...PRISON, k:'prison' }]));
   fill(SIGHT, OB.filter(o => o.k === 'bld' || o.k === 'tank' || o.k === 'bus'));
   fill(HIDES, m.hides.map(([x,y,r,k]) => ({ x, y, r, k })));
@@ -231,6 +236,33 @@ export function setMap(id){
     const o = OB.find(o => o.label===b); const [x,y] = freePt(o.x+o.w/2, o.y+o.h+1.35);
     return { b, item, price, fx, icon, goods, x, y, o };
   }));
+}
+// A gap beside a parked danfo or keke that is too narrow to look open (but wide enough to
+// squeeze a body through) gets a pile of tyres and jerrycans, so vehicles really block the way.
+// Works for any location, including ones you add yourself. GAP_FILL is the widest gap it closes.
+const GAP_FILL = 1.8;
+function vehicleGapFillers(obs){
+  const out = [], others = obs.concat([{ ...PRISON }]);
+  const add = (x, y, w, h) => { if (w > .05 && h > .05) out.push({ x, y, w, h, k:'clutter', label:'', col:'' }); };
+  for (const v of obs){
+    if (v.k !== 'bus' && v.k !== 'keke' && v.k !== 'car') continue;
+    for (const o of others){
+      if (o === v || (o.k === 'bus' || o.k === 'keke' || o.k === 'car') && obs.indexOf(o) < obs.indexOf(v)) continue;   // each vehicle pair once
+      const y0 = Math.max(v.y, o.y), y1 = Math.min(v.y+v.h, o.y+o.h), x0 = Math.max(v.x, o.x), x1 = Math.min(v.x+v.w, o.x+o.w);
+      if (y1 - y0 > .3){                                   // side by side
+        if (o.x >= v.x+v.w && o.x - (v.x+v.w) < GAP_FILL) add(v.x+v.w, y0, o.x-(v.x+v.w), y1-y0);
+        else if (v.x >= o.x+o.w && v.x - (o.x+o.w) < GAP_FILL) add(o.x+o.w, y0, v.x-(o.x+o.w), y1-y0);
+      } else if (x1 - x0 > .3){                            // one behind the other
+        if (o.y >= v.y+v.h && o.y - (v.y+v.h) < GAP_FILL) add(x0, v.y+v.h, x1-x0, o.y-(v.y+v.h));
+        else if (v.y >= o.y+o.h && v.y - (o.y+o.h) < GAP_FILL) add(x0, o.y+o.h, x1-x0, v.y-(o.y+o.h));
+      }
+    }
+    if (v.x < GAP_FILL) add(0, v.y, v.x, v.h);
+    if (W - (v.x+v.w) < GAP_FILL) add(v.x+v.w, v.y, W-(v.x+v.w), v.h);
+    if (v.y < GAP_FILL) add(v.x, 0, v.w, v.y);
+    if (H - (v.y+v.h) < GAP_FILL) add(v.x, v.y+v.h, v.w, H-(v.y+v.h));
+  }
+  return out;
 }
 export const shopNear = e => SHOPS.findIndex(s => Math.hypot(e.x-s.x, e.y-s.y) < CFG.shopRange);
 

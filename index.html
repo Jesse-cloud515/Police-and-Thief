@@ -75,6 +75,7 @@
     <div id="timer"><b id="tTime">4:00</b><span id="tSub">POLICE COUNTING</span><div id="pips"></div></div>
     <canvas id="mini" width="168" height="268"></canvas>
   </div>
+  <div id="hint" class="hidden"></div>
   <ul id="feed"></ul>
 </div>
 <div id="ctrl" class="hidden">
@@ -83,14 +84,13 @@
   <div id="joyBase"><div id="joyKnob"></div></div>
   <div id="chat"></div>
   <button class="cb" id="bAbil"><div class="cd"></div><span id="abIcon">💨</span><b id="abName">DASH</b></button>
-  <button class="cb" id="bRun">RUN</button>
+  <button class="cb" id="bRun"><span>⚡</span>SPRINT</button>
   <button class="cb" id="bAct">ACTION</button>
 </div>
 <div id="ctlEdit" class="hidden"><b>Drag the buttons where your thumbs want them</b><div class="row"><button class="btn ghost" id="ctlReset">Reset</button><button class="btn green" id="ctlDone">Done</button></div></div>
-<div id="tut" class="hidden"><div class="tstep" id="tutStep"></div><div class="ttext" id="tutText"></div><button id="tutSkip">Skip</button></div>
+<div id="tut" class="hidden"><div class="tstep" id="tutStep"></div><div class="ttext" id="tutText"></div><div id="tutInfo"></div><button id="tutOk" class="btn green">Got it ›</button><button id="tutSkip">Skip</button></div>
 <div id="tutArrow" class="hidden">➤</div>
 <div id="stamBar" class="hidden"><i></i></div>
-<div id="hint" class="hidden"></div>
 <div id="tags"></div>
 <div id="ann"></div>
 
@@ -153,6 +153,7 @@
     <div id="setCtl"></div>
     <div id="setGame" class="hidden">
       <div class="row" style="flex-direction:column;margin-top:0">
+        <button class="btn ghost" id="sOrient">Screen: UPRIGHT</button>
         <button class="btn ghost" id="sQual">Graphics: AUTO</button>
         <button class="btn ghost" id="sCam">Camera: NORMAL</button>
         <button class="btn ghost" id="sSound">Sound: ON</button>
@@ -193,6 +194,14 @@
   <p class="stfine">Purchases are cosmetic or game cash only. Nothing you buy makes you run faster or catch easier. Purchases are saved on this device.</p>
   <button class="btn ghost" id="stClose" style="width:100%;margin-top:6px">Close</button>
 </div></div>
+<div id="orientDlg" class="dlg hidden"><div class="card" style="text-align:center">
+  <div class="bung" style="font-size:20px;color:#ffd84d">HOW DO YOU WANT TO PLAY?</div>
+  <p style="font-weight:800;line-height:1.4;margin:6px 0 12px">You can change this any time in More → Settings → Game.</p>
+  <div class="orow">
+    <button class="ochoice" data-or="portrait"><span class="ph p">📱</span><b>Upright</b><small>One hand, more street ahead of you</small></button>
+    <button class="ochoice" data-or="landscape"><span class="ph l">📱</span><b>Sideways</b><small>Two thumbs, wider view</small></button>
+  </div>
+</div></div>
 <div id="firstDlg" class="dlg hidden"><div class="card" style="text-align:center">
   <div class="bung" style="font-size:22px;color:#ffd84d">FIRST TIME?</div>
   <p style="font-weight:800;line-height:1.4">Learn to run, hide, free your people and catch thieves in about a minute.</p>
@@ -206,7 +215,7 @@
   <button class="btn ghost" id="tutHome" style="width:100%;margin-top:8px">Home</button>
 </div></div>
 <div id="toast" style="opacity:0"></div>
-<div id="rotate" class="hidden"><div class="ph">📱</div><p>Turn your phone upright<br>to play</p></div>
+<div id="rotate" class="hidden"><div class="ph">📱</div><p id="rotText">Turn your phone upright<br>to play</p><button class="btn ghost" id="rotSwitch">Play this way instead</button></div>
 
 <script src="./config.js" onerror="window.PT_CONFIG={}"></script>
 <script>

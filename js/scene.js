@@ -189,6 +189,23 @@ function buildWorld(){
       add(new THREE.BoxGeometry(o.w,.15,o.h), tm(0x5b4a3a), cx,1.2,cz);
       add(new THREE.CylinderGeometry(1.15,1.15,1.6,20), tm(0x1a1a1a), cx,2.05,cz);
       add(new THREE.CylinderGeometry(.35,.35,.15,12), tm(0x333333), cx,2.9,cz);
+    } else if (o.k==='car'){
+      const g = new THREE.Group(); g.position.set(cx, 0, cz); if (o.w > o.h) g.rotation.y = Math.PI/2; world.add(g);
+      add(new THREE.BoxGeometry(1.3,.55,2.6), tm(new THREE.Color(o.col)), 0,.5,0, g);
+      add(new THREE.BoxGeometry(1.15,.45,1.4), tm(0x2c3e57), 0,.98,-.1, g);
+      for (const [dx,dz] of [[-.62,-.85],[.62,-.85],[-.62,.85],[.62,.85]]){ const wh = add(new THREE.CylinderGeometry(.24,.24,.18,10), tm(0x111111), dx,.24,dz, g); wh.rotation.z = Math.PI/2; }
+    } else if (o.k==='kiosk'){
+      add(new THREE.BoxGeometry(o.w,1.6,o.h), tm(new THREE.Color(o.col)), cx,.8,cz); add(new THREE.BoxGeometry(o.w+.2,.1,o.h+.2), tm(0xffffff), cx,1.65,cz);
+    } else if (o.k==='cooler'){
+      add(new THREE.BoxGeometry(o.w,.8,o.h), tm(new THREE.Color(o.col)), cx,.4,cz);
+    } else if (o.k==='clutter'){
+      // old tyres and jerrycans packed into the gap, so it reads as blocked
+      const long = o.h > o.w, n = Math.max(1, Math.round((long ? o.h : o.w) / .55));
+      for (let i=0;i<n;i++){
+        const t = (i+.5)/n, px = long ? cx : o.x+o.w*t, pz = long ? o.y+o.h*t : cz;
+        if (i%3===1){ add(new THREE.BoxGeometry(.32,.5,.22), tm([0xd8a21c,0x2e86de,0xc0392b][i%3]), px, .25, pz); }
+        else { for (let k=0;k<2;k++){ const ty = add(new THREE.TorusGeometry(.22,.1,6,12), tm(0x1b1b1b), px, .1+k*.2, pz); ty.rotation.x = Math.PI/2; } }
+      }
     } else if (o.k==='bore'){
       add(new THREE.BoxGeometry(o.w,.25,o.h), tm(0x8c9aa5), cx,.12,cz);
       add(new THREE.CylinderGeometry(.12,.12,1.1,8), tm(0x4a6b8a), cx,.75,cz);
@@ -351,19 +368,10 @@ function buildExtras(){
     }
     add(new THREE.CylinderGeometry(.015,.015,4.2,4), tm(0x333333), 10.4, 3.55, z, world, false).rotation.z = Math.PI/2;
   }
-  // parked cars
-  const carCols = [0xc0392b, 0x2e86de, 0xeeeeee, 0x222222];
-  [[11.2,23],[11.2,47],[30,39.3]].forEach(([x,z],i) => {
-    const g = new THREE.Group(); g.position.set(x,0,z); if (i===2) g.rotation.y = Math.PI/2; world.add(g);
-    add(new THREE.BoxGeometry(1.3,.55,2.6), tm(carCols[i%4]), 0,.5,0, g);
-    add(new THREE.BoxGeometry(1.15,.45,1.4), tm(0x2c3e57), 0,.98,-.1, g);
-    for (const [dx,dz] of [[-.62,-.85],[.62,-.85],[-.62,.85],[.62,.85]]){ const w=add(new THREE.CylinderGeometry(.24,.24,.18,10), tm(0x111111), dx,.24,dz, g); w.rotation.z=Math.PI/2; }
-  });
+  // (the parked cars, kiosk and cooler are solid obstacles now: see props in world.js and buildWorld)
   // plastic chairs and a pot outside Mama Put, a kiosk and a cooler
   for (let i=0;i<4;i++){ const c = i%2?0xe74c3c:0x2e86de; const g=new THREE.Group(); g.position.set(8.2+(i%2)*.8, 0, 4+Math.floor(i/2)*1.2); world.add(g); add(new THREE.BoxGeometry(.5,.08,.5), tm(c), 0,.45,0, g); add(new THREE.BoxGeometry(.5,.5,.08), tm(c), 0,.7,-.22, g); for (const [dx,dz] of [[-.2,-.2],[.2,-.2],[-.2,.2],[.2,.2]]) add(new THREE.BoxGeometry(.05,.45,.05), tm(c), dx,.22,dz, g); }
   add(new THREE.CylinderGeometry(.35,.3,.45,12), tm(0x555555), 7.6,.25,7.5); add(new THREE.CylinderGeometry(.4,.4,.06,12), tm(0x333333), 7.6,.5,7.5);
-  add(new THREE.BoxGeometry(1.1,.8,.7), tm(0xe0601f), 19.5,.4,49.3);
-  add(new THREE.BoxGeometry(1.4,1.6,1), tm(0x2e86de), 4.5,.8,44); add(new THREE.BoxGeometry(1.6,.1,1.2), tm(0xffffff), 4.5,1.65,44);
   // overhead wires between lamp posts
   const wireM = new THREE.LineBasicMaterial({ color:0x222222, transparent:true, opacity:.6 });
   for (let i=0;i<LAMPS.length-1;i++){ const a=LAMPS[i], b=LAMPS[i+1]; if (Math.hypot(a[0]-b[0],a[1]-b[1])>14) continue; const pts=[]; for (let k=0;k<=10;k++){ const t=k/10; pts.push(new THREE.Vector3(a[0]+(b[0]-a[0])*t+.5, 3.1-Math.sin(t*Math.PI)*.5, a[1]+(b[1]-a[1])*t)); } world.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireM)); }

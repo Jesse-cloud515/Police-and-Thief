@@ -278,7 +278,7 @@ export function syncStreet(st, ents, me, dt, t, night, lowQuality){
     c.g.visible = !lowQuality; if (lowQuality) continue;
     let fx = 0, fy = 0, scared = false;
     for (const e of ents){ if (e.state!=='free') continue; const dx = c.x-e.x, dy = c.y-e.y, d = Math.hypot(dx,dy); if (d < 2.3 && (e.speed||0) > 1){ fx += dx/(d+.01); fy += dy/(d+.01); scared = true; } }
-    if (st.ball){ const dx = c.x-st.ball.x, dy = c.y-st.ball.y, d = Math.hypot(dx,dy); if (d < 1.2){ fx += dx/(d+.01); fy += dy/(d+.01); scared = true; } }
+    if (MAP.ball && st.ball){ const dx = c.x-st.ball.x, dy = c.y-st.ball.y, d = Math.hypot(dx,dy); if (d < 1.2){ fx += dx/(d+.01); fy += dy/(d+.01); scared = true; } }
     if (scared){ c.a = Math.atan2(fx, fy); c.run = .7; }
     c.t -= dt;
     let sp = 0;
