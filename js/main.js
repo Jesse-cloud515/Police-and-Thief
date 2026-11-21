@@ -888,7 +888,13 @@ function drawMini(st, ents, me){
   mg.fillStyle='#2f6b2a'; for (const h of HIDES){ mg.beginPath(); mg.arc(h.x*s,h.y*s,h.r*s,0,7); mg.fill(); }
   mg.fillStyle='#1d3a7a'; mg.fillRect(PRISON.x*s,PRISON.y*s,PRISON.w*s,PRISON.h*s);
   for (const x of EXITS){ mg.fillStyle = st.exitsOpen ? '#3ddc84' : '#d33'; mg.fillRect(x.x*s,x.y*s,x.w*s,x.h*s); }
-  mg.fillStyle='#35e0a1'; for (const sh of SHOPS) mg.fillRect(sh.x*s-3, sh.y*s-3, 6, 6);
+  // shops: a small white badge with the food icon
+  mg.textAlign='center'; mg.textBaseline='middle'; mg.font='11px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  for (const sh of SHOPS){
+    mg.fillStyle='#35e0a1'; mg.beginPath(); mg.arc(sh.x*s, sh.y*s, 9, 0, 7); mg.fill();
+    mg.fillStyle='#fffaf0'; mg.beginPath(); mg.arc(sh.x*s, sh.y*s, 7, 0, 7); mg.fill();
+    mg.fillText(sh.icon, sh.x*s, sh.y*s+1);
+  }
   if (MAP.bell){ mg.fillStyle='#ffd84d'; mg.fillRect(MAP.bell.x*s-4, MAP.bell.y*s-4, 8, 8); }
   if (MAP.gaps){ mg.fillStyle='#7db8ff'; for (const gp of MAP.gaps) mg.fillRect(gp[0]*s-4, gp[1]*s-5, 8, 10); }
   if (st.herd && st.herd.p>=0){ const hs = herdDots(st.herd.p); mg.fillStyle='#fff'; for (const c of hs) mg.fillRect(c.x*s-3, c.y*s-3, 6, 6); }
@@ -1021,4 +1027,4 @@ function checkRotate(){
   show('rotate', isTouch() && wrong && $('orientDlg').classList.contains('hidden'));
 }
 checkRotate();
-window.PTG = { get G(){ return G; }, get MC(){ return MC; }, startSolo, step, SAVE, SRV, TUT };
+window.PTG = { get G(){ return G; }, get MC(){ return MC; }, startSolo, step, SAVE, SRV, TUT, setMode };

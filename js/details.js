@@ -23,7 +23,7 @@ const ball = (r,s=8) => new THREE.SphereGeometry(r,s,6);
 export function buildStreet(world, helpers){
   H = helpers;
   const { add, tm } = H;
-  for (const k of ['keepers','rings','signs','glows','chickens','smokers','cows']) live[k] = [];
+  for (const k of ['keepers','rings','signs','pins','glows','chickens','smokers','cows']) live[k] = [];
   live.notes.clear(); live.ball = null; live.herd = null; live.bell = null; live.gapRings = [];
   live.group = new THREE.Group(); live.group.userData.dyn = true; world.add(live.group);
 
@@ -46,6 +46,11 @@ export function buildStreet(world, helpers){
     // price board, counter ring and a lantern glow for night games
     const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: priceTex(s), depthWrite:false }));
     sign.scale.set(2.5, .62, 1); sign.position.set(s.x, 3.05, z0+.2); live.group.add(sign); live.signs.push(sign);
+    // shop pin: a round badge with the food icon that floats above the shop, so you can spot
+    // shops from across the map (drawn on top of roofs and trees)
+    const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTex(s.icon, o.col), depthTest:false, depthWrite:false, transparent:true }));
+    pin.scale.set(1.15, 1.4, 1); pin.position.set(s.x, 4.3, z0+.2); pin.renderOrder = 5;
+    live.group.add(pin); live.pins.push(pin);
     const ring = new THREE.Mesh(new THREE.RingGeometry(.62,.8,28), new THREE.MeshBasicMaterial({ color:0x35e0a1, transparent:true, opacity:.75, depthWrite:false }));
     ring.rotation.x = -Math.PI/2; ring.position.set(s.x, .045, s.y); live.group.add(ring); live.rings.push(ring);
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(5.5,4), new THREE.MeshBasicMaterial({ map: glowTex(), color:0xffb65c, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending }));
@@ -79,6 +84,20 @@ function priceTex(s){
     g.font = '900 60px Nunito, Arial, sans-serif'; g.textBaseline = 'middle';
     g.fillStyle = '#fff'; g.textAlign = 'left'; g.fillText(s.icon + ' ' + s.item, 26, h/2+3, 330);
     g.fillStyle = '#ffd84d'; g.textAlign = 'right'; g.fillText('₦' + s.price, w-26, h/2+3);
+  });
+}
+// the shop pin picture: white badge with the shop's colour as a ring, the food icon inside,
+// and a point at the bottom. Change the colours here
+function pinTex(icon, col){
+  return canvasTex(128, 156, (g, w) => {
+    const cx = w/2, cy = 60, r = 52;
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(cx, 150, 16, 5, 0, 0, 7); g.fill();   // shadow
+    g.fillStyle = col || '#35e0a1';
+    g.beginPath(); g.moveTo(cx-22, cy+40); g.lineTo(cx, 146); g.lineTo(cx+22, cy+40); g.fill();    // point
+    g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+    g.fillStyle = '#fffaf0'; g.beginPath(); g.arc(cx, cy, r-9, 0, 7); g.fill();
+    g.font = '56px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, cx, cy+4);
   });
 }
 let GT = null;
@@ -258,6 +277,10 @@ export function syncStreet(st, ents, me, dt, t, night, lowQuality){
     const sc = near ? 1.15+.1*Math.sin(t*10) : 1+.04*Math.sin(t*3+i);
     live.rings[i].scale.set(sc,sc,sc); live.rings[i].material.color.set(near ? 0xffd84d : 0x35e0a1);
     live.glows[i].material.opacity = night ? .55 : 0;
+    // the pin bobs, and fades away when you're standing at the counter (the price board takes over)
+    const pin = live.pins[i];
+    pin.position.y = 4.3 + Math.sin(t*2.2 + i*1.7)*.12;
+    pin.material.opacity += ((near ? 0 : 1) - pin.material.opacity) * Math.min(1, dt*8);
   });
   // shopkeepers wave when someone is close
   live.keepers.forEach((k,i) => {
