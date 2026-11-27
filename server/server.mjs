@@ -54,12 +54,48 @@ async function verifyPayment(req, res){
   if (!r || r.status !== true || !d || d.status !== 'success') return json(res, 402, { ok:false, reason:'payment not successful' });
   if (d.currency !== 'NGN' || d.amount !== product.price * 100) return json(res, 402, { ok:false, reason:'amount does not match' });
   if (d.reference !== ref) return json(res, 402, { ok:false, reason:'reference mismatch' });
+  let meta = d.metadata; if (typeof meta === 'string'){ try { meta = JSON.parse(meta); } catch { meta = null; } }
+  if (meta && meta.product && meta.product !== product.id) return json(res, 402, { ok:false, reason:'product mismatch' });
   paid[ref] = { product: product.id, amount: d.amount, email: d.customer && d.customer.email || '', at: Date.now() };
   savePaid();
   console.log('payment ok', ref, product.id, d.amount / 100, 'NGN');
   return json(res, 200, { ok:true, product: product.id });
 }
 
+// [PAY] Restore purchases on a new phone or after clearing the browser.
+// The player types the email they paid with. The server asks Paystack for that customer's
+// successful payments and sends back the ones for packs and "No ad breaks". Game cash is
+// NOT restored: it was already spent on the old phone, and restoring it would hand out free ₦.
+// Anyone who knows a player's email could restore their outfits too. That only gives away
+// cosmetics, which is why game cash stays out.
+const RESTORABLE = new Set(['pack', 'noads']);
+const restoreHits = new Map();   // ip -> [times], at most 5 tries a minute
+async function restorePurchases(req, res){
+  if (req.method !== 'POST') return json(res, 405, { ok:false, reason:'POST only' });
+  if (!PAYSTACK_SECRET) return json(res, 503, { ok:false, reason:'payments not set up on the server' });
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const now = Date.now(), hits = (restoreHits.get(ip) || []).filter(t => now - t < 60000);
+  if (hits.length >= 5) return json(res, 429, { ok:false, reason:'too many tries, wait a minute' });
+  hits.push(now); restoreHits.set(ip, hits);
+  let body; try { body = JSON.parse(await readBody(req)); } catch { return json(res, 400, { ok:false, reason:'bad request' }); }
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 120) return json(res, 400, { ok:false, reason:'bad email' });
+  const ps = async path => (await fetch(PAYSTACK_API + path, { headers: { Authorization: 'Bearer ' + PAYSTACK_SECRET } })).json();
+  try {
+    const c = await ps('/customer/' + encodeURIComponent(email));
+    if (!c || c.status !== true || !c.data || !c.data.id) return json(res, 200, { ok:true, items: [] });
+    const t = await ps('/transaction?status=success&perPage=100&customer=' + encodeURIComponent(c.data.id));
+    const items = [];
+    for (const d of (t && t.data) || []){
+      let meta = d.metadata; if (typeof meta === 'string'){ try { meta = JSON.parse(meta); } catch { meta = null; } }
+      const product = productById(String(meta && meta.product || ''));
+      if (!product || !RESTORABLE.has(product.kind)) continue;
+      if (d.status !== 'success' || d.currency !== 'NGN' || d.amount !== product.price * 100) continue;
+      items.push({ ref: d.reference, product: product.id });
+    }
+    return json(res, 200, { ok:true, items });
+  } catch { return json(res, 502, { ok:false, reason:'could not reach Paystack' }); }
+}
 
 // ---------------------------------------------------------------- static files
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css', '.json':'application/json', '.webmanifest':'application/manifest+json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon', '.mp3':'audio/mpeg' };
@@ -90,6 +126,7 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/health'){ res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ ok:true, rooms: rooms.size, players: clients.size })); return; }
   if (url.pathname === '/api/verify'){ verifyPayment(req, res).catch(() => json(res, 500, { ok:false, reason:'server error' })); return; }
+  if (url.pathname === '/api/restore'){ restorePurchases(req, res).catch(() => json(res, 500, { ok:false, reason:'server error' })); return; }
   if (url.pathname === '/api/leaderboard'){ res.writeHead(200, {'content-type':'application/json','cache-control':'max-age=30'}); res.end(JSON.stringify(topBoard())); return; }
   let p = url.pathname === '/' ? '/index.html' : url.pathname;
   if (!ALLOWED.test(p)){ res.writeHead(404); res.end('Not found'); return; }

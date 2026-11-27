@@ -53,23 +53,30 @@ Nothing for sale makes anyone faster or better at catching. It's all looks and g
 |---|---|---|
 | Product list and prices | `js/products.js` | read by both the game and the server, so the server rejects a wrong amount |
 | Store screen and Paystack checkout | `js/store.js` | opens Paystack's own payment window |
-| Payment check | `server/server.mjs`, the `payments [PAY]` block | asks Paystack whether the payment really happened |
+| Payment check | `server/server.mjs`, `verifyPayment` | asks Paystack whether the payment really happened, for the right amount and the right item |
+| Restore purchases | `server/server.mjs`, `restorePurchases`, and `restore` in `js/store.js` | brings back packs and No-ads on a new phone, from the email the player paid with |
 | Giving the item | `js/meta.js`, `grantProduct()` | only after the server says yes; each payment counts once |
 | Your settings | `config.js` line 13 | `payments: { ... }` |
 
 ### Turning payments on
-1. Open a Paystack account at paystack.com (business registration with CAC is needed for live payments).
-2. In the Paystack dashboard, open Settings > API Keys & Webhooks. You'll see a public key (`pk_...`) and a secret key (`sk_...`).
-3. In `config.js` set `payments: { provider: 'paystack', publicKey: 'pk_test_...' }`.
-4. Where the server runs, set the environment variable `PAYSTACK_SECRET=sk_test_...`. Never put the secret key in `config.js`: anyone can read that file.
-5. Test with Paystack's test cards until purchases arrive in the game, then swap both keys for the `pk_live_` / `sk_live_` ones.
 
-Payments only work when the game is on your own website with the server running. Inside the claude.ai preview the Store shows prices, but the Buy buttons stay off.
+Your server is at `https://police-thief-naija.onrender.com`, and `config.js` already points at it.
+
+1. Sign up at paystack.com. You can test straight away. Paystack switches on live payments after it checks your business details (CAC registration).
+2. In the Paystack dashboard, open **Settings → API Keys & Webhooks**. Copy the **Test Public Key** (`pk_test_...`) and the **Test Secret Key** (`sk_test_...`).
+3. **The secret key goes on Render only.** In Render, open the service → **Environment** → find `PAYSTACK_SECRET` (it's already listed from `render.yaml`) → paste the `sk_test_...` key → **Save Changes**. Render restarts the server. Never put this key in `config.js`, GitHub or a chat.
+4. **The public key goes in `config.js`:** `payments: { provider: 'paystack', publicKey: 'pk_test_...' }`. Bump the version in `sw.js`, commit and push. Render rebuilds by itself.
+5. Open the game → tap the ₦ at the top → type an email → buy something. Use one of Paystack's test cards from their "Test payments" docs page. The item should arrive within a few seconds.
+6. Clear the browser (or use another phone), open the Store, type the same email and tap **RESTORE PURCHASES**. The pack should come back.
+7. When it all works, repeat steps 2–4 with the **live** keys (`pk_live_` and `sk_live_`).
+
+Payments only work on your own website with the server running. Inside the claude.ai preview the Store shows prices, but the Buy buttons stay off.
 
 ### Limits to know about
-- Purchases are saved on the player's phone. If they clear their browser or change phones, they lose them. Player accounts (sign in with phone number or Google) fix this, and they're the next thing to build once money is coming in.
+- Purchases are saved on the player's phone. **Restore purchases** brings back outfit packs and No-ads from the email they paid with. Game cash isn't restored, because it was already spent on the old phone and restoring it would hand out free ₦. Proper accounts would fix that too.
+- Anyone who types a player's email could restore that player's outfits on their own phone. It only gives away cosmetics, which is the reason game cash stays out of restore.
+- Every payment the server accepts is listed in `server/data/payments.json`, so you can answer "I paid but didn't get it" messages. On Render's free plan this file is wiped whenever the server restarts. Before taking live payments, move to the Starter plan with a disk at `/data`, so the list survives and each payment can only ever be claimed once.
 - Paystack takes a fee on each payment (check their current pricing page).
-- Every payment the server accepts is listed in `server/data/payments.json`, so you can answer "I paid but didn't get it" messages.
 
 ## 3. More ways to make money
 

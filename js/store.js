@@ -86,6 +86,28 @@ async function buy(p){
   }catch(e){ hooks.toast('Paystack could not start the payment. Try again'); }
 }
 
+// [PAY] Restore: brings back packs and "No ad breaks" bought with this email, on a new phone
+// or after the browser was cleared. Game cash isn't restored (the server explains why).
+async function restore(btn){
+  const email = ($('stEmail').value || '').trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ hooks.toast('Type the email you paid with, then tap Restore'); $('stEmail').focus(); return; }
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try{
+    const r = await fetch(apiBase() + '/api/restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok){ hooks.toast(r.status === 429 ? 'Too many tries. Wait a minute and try again' : "Couldn't check right now. Try again later"); }
+    else {
+      const got = new Set();
+      for (const it of j.items || []){ const p = productById(it.product); if (p && M.grantProduct(p, it.ref)) got.add(p.name); }
+      const n = got.size;
+      M.SAVE.payEmail = email; M.persist(); hooks.refresh();
+      hooks.toast(n ? `✅ Restored: ${[...got].join(', ')}` : (j.items || []).length ? 'Everything you bought is already on this phone' : 'No outfit packs or No-ads found for that email');
+    }
+  }catch(e){ hooks.toast("Couldn't check right now. Try again later"); }
+  btn.disabled = false; btn.textContent = 'RESTORE PURCHASES';
+  renderStore();
+}
+
 // [AD] watch an ad for free ₦, a few times a day
 async function watchForCash(btn){
   btn.disabled = true;
@@ -125,6 +147,8 @@ export function renderStore(){
     b.disabled = owned || !on; b.onclick = () => buy(p); r.appendChild(b);
     L.appendChild(r);
   }
+  // restore button (only when payments are on)
+  const rb = $('stRestore'); if (rb){ rb.classList.toggle('hidden', !on); rb.onclick = () => restore(rb); }
   const n = pending().length;
   $('stPending').textContent = n ? `${n} payment${n > 1 ? 's' : ''} waiting for confirmation…` : '';
 }

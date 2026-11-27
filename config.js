@@ -4,10 +4,10 @@ window.PT_CONFIG = {
   // If the game is on a different website from the server (for example GitHub Pages), put the
   // server's address here, starting wss:// and ending /ws, e.g. 'wss://police-thief-naija.onrender.com/ws'
   // Without it, the GitHub Pages copy is single player only.
-  server: '',
+  server: 'wss://police-thief-naija.onrender.com/ws',
   // The server's address for payments and the leaderboard, when the game is on a different website,
   // e.g. 'https://police-thief-naija.onrender.com'. Leave '' otherwise.
-  api: '',
+  api: 'https://police-thief-naija.onrender.com',
   // [AD] Ads: 'none' | 'poki' | 'crazygames' | 'h5'   (see js/ads.js and MONETIZATION.md)
   //   h5 = Google ads on your own website: client is your AdSense publisher id 'ca-pub-...',
   //   bannerSlot is the id of a display ad unit you create in AdSense (optional).
