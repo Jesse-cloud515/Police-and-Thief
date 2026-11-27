@@ -136,6 +136,7 @@ export function createTutorial(api){
     T.active = false; S.setGuide(null); hl(null);
     $('tut').classList.add('hidden'); $('tutArrow').classList.add('hidden');
     const first = !api.save().tutDone;
+    if (window.PT_TRACK) PT_TRACK('tutorial-finished');
     api.save().tutDone = true; if (first) api.save().coins += 100; api.persist();
     $('tutEndText').textContent = first ? "That's everything. Here's ₦100 to spend in the Wardrobe." : "That's everything. Go and play.";
     api.pause(true);

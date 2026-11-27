@@ -54,7 +54,7 @@ async function settle(ref, productId){
     const v = await verify(ref, productId);
     if (v.ok){
       M.SAVE.pendingPay = pending().filter(x => x.ref !== ref);
-      if (M.grantProduct(p, ref)){ hooks.sfx('coin'); hooks.toast(`✅ ${p.name} added. Thank you!`); }
+      if (M.grantProduct(p, ref)){ if (window.PT_TRACK) PT_TRACK('purchase-' + p.id); hooks.sfx('coin'); hooks.toast(`✅ ${p.name} added. Thank you!`); }
       M.persist(); hooks.refresh(); renderStore(); return;
     }
     if (!v.retry){ M.SAVE.pendingPay = pending().filter(x => x.ref !== ref); M.persist(); hooks.toast(`Payment not confirmed (${v.reason}). If you were charged, contact support with reference ${ref}`); }
@@ -152,7 +152,7 @@ export function renderStore(){
   const n = pending().length;
   $('stPending').textContent = n ? `${n} payment${n > 1 ? 's' : ''} waiting for confirmation…` : '';
 }
-export function openStore(){ renderStore(); $('storeDlg').classList.remove('hidden'); }
+export function openStore(){ if (window.PT_TRACK) PT_TRACK('store-opened'); renderStore(); $('storeDlg').classList.remove('hidden'); }
 export function initStore(h){
   hooks = { ...hooks, ...h };
   $('stClose').onclick = () => $('storeDlg').classList.add('hidden');

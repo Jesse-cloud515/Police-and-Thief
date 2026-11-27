@@ -1,6 +1,6 @@
 # Launch plan: Police & Thief: Naija Streets
 
-Updated 26 November 2026. Work through the stages in order. Each task is marked:
+Updated 27 November 2026. Repo: https://github.com/Jesse-cloud515/Police-and-Thief · Server: https://police-thief-naija.onrender.com · Pages: https://jesse-cloud515.github.io/Police-and-Thief/ Work through the stages in order. Each task is marked:
 
 - **[YOU]**: only you can do it (accounts, money, legal, real phones, real people)
 - **[ME]**: Claude does it once you send what's listed
@@ -16,7 +16,7 @@ Tick the boxes as you go.
 - [x] Controls: joystick, SPRINT button, layout editor, upright or sideways
 - [x] Tutorial with the power-ups card
 - [x] Online play: Quick Match and Play with Friends (room codes and WhatsApp invite links)
-- [x] Game server, with leaderboard, name filter and Paystack payment check
+- [x] Game server, with leaderboard, name filter, Paystack payment check and Restore purchases
 - [x] Hosting files (`Dockerfile`, `render.yaml`)
 - [x] Shop pins and minimap badges
 - [x] Posters (A3, story, square), trailer, and Play with Friends clip
@@ -56,14 +56,14 @@ If the build fails, open **Logs** and send Claude a screenshot of the red lines.
 
 ### 1.4 [YOU] Send Claude these
 
-- [ ] The GitHub repo link
-- [ ] The GitHub Pages link (if you did 1.2)
-- [ ] The Render address
+- [x] The GitHub repo link
+- [x] The GitHub Pages link (if you did 1.2)
+- [x] The Render address
 - [ ] What happened in the two-phone test
 
 ### 1.5 [ME] Connect everything
 
-- [ ] Put the Render address into `config.js` so the GitHub Pages copy gets online play
+- [x] Put the Render address into `config.js` so the GitHub Pages copy gets online play
 - [ ] Put your link and a real QR code on the three posters
 - [ ] Tell you what to type in Render's **Environment** tab for `ALLOWED_ORIGINS`, so only your sites can use the server
 
@@ -107,7 +107,7 @@ This also emails you if the server goes down. Render's free plan gives enough ho
 1. Sign up at sentry.io (free plan).
 2. Create a project and pick **Browser JavaScript** as the platform.
 3. Copy the **DSN**. It looks like `https://abc123@o456.ingest.sentry.io/789`. It's safe to share; it only lets the game send error reports.
-- [ ] Send Claude the DSN.
+- [x] Send Claude the DSN.
 
 ### 3.2 [YOU] GoatCounter, for player numbers
 
@@ -119,7 +119,7 @@ This also emails you if the server goes down. Render's free plan gives enough ho
 
 ### 3.3 [ME] Wire them in
 
-- [ ] Errors from players' phones go to Sentry, with the phone type and the map that was being played
+- [x] Errors from players' phones go to Sentry, with the screen size, solo or online, and the map that was being played
 - [ ] GoatCounter counts visits, games started, online versus solo games, and tutorial finishes
 - [ ] Show you which numbers to check each week: players per day, and who comes back after 1 day and after 7 days
 

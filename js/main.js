@@ -337,12 +337,12 @@ function renderOnline(){
     }
     if (showBoard) return renderBoard(p);
     if (SRV.lobby) return renderSrvLobby(p);
-    if (pendingRoom){ const c = pendingRoom; pendingRoom = null; srvSend({ t:'join', code:c, side: SAVE().side }); p.appendChild(el('p',null,`Joining room ${c}…`)); return; }
+    if (pendingRoom){ const c = pendingRoom; pendingRoom = null; srvSend({ t:'join', code:c, side: SAVE().side }); PT_TRACK('online-invite-link-opened'); p.appendChild(el('p',null,`Joining room ${c}…`)); return; }
     if (onView === 'friends') return renderFriends(p);
     p.appendChild(el('p','onlineAs',`Playing as ${SAVE().name}`));
     // the two ways to play online, eFootball / Mini Militia style
     const quick = modeTile('⚡', 'QUICK MATCH', 'Play with anyone online. Teams are picked for you and bots fill empty places.', 'green');
-    quick.onclick = () => srvSend({ t:'quick', side:'R' });
+    quick.onclick = () => { srvSend({ t:'quick', side:'R' }); PT_TRACK('online-quick-match'); };
     const friends = modeTile('👥', 'PLAY WITH FRIENDS', 'Make a room, send the code, choose your sides and the location.', 'orange');
     friends.onclick = () => { onView = 'friends'; renderOnline(); };
     p.appendChild(quick); p.appendChild(friends);
@@ -371,12 +371,12 @@ function modeTile(icon, title, text, col){
 function renderFriends(p){
   p.appendChild(el('p',null,'Make a room and send the code to your friends, or type the code a friend sent you.'));
   const mk = el('button','btn orange','➕ CREATE ROOM'); mk.style.cssText='width:100%;font-size:18px';
-  mk.onclick = () => srvSend({ t:'create', side: SAVE().side, map: SAVE().map || 'random' });
+  mk.onclick = () => { srvSend({ t:'create', side: SAVE().side, map: SAVE().map || 'random' }); PT_TRACK('online-room-created'); };
   p.appendChild(mk);
   p.appendChild(el('p','orLine','or join a friend'));
   const inp = el('input','txt'); inp.maxLength=4; inp.placeholder='ROOM CODE'; inp.autocomplete='off'; p.appendChild(inp);
   const jn = el('button','btn blue','JOIN ROOM'); jn.style.cssText='width:100%;margin-top:8px';
-  const go = () => { const c = inp.value.toUpperCase().replace(/[^A-Z0-9]/g,''); if (c.length!==4){ toast('Room codes have 4 letters'); return; } srvSend({ t:'join', code:c, side: SAVE().side }); };
+  const go = () => { const c = inp.value.toUpperCase().replace(/[^A-Z0-9]/g,''); if (c.length!==4){ toast('Room codes have 4 letters'); return; } srvSend({ t:'join', code:c, side: SAVE().side }); PT_TRACK('online-room-joined'); };
   jn.onclick = go; inp.onkeydown = e => { if (e.key==='Enter') go(); };
   p.appendChild(jn);
 }
@@ -552,7 +552,7 @@ const TUT = createTutorial({
   pause: on => { if (MC) MC.paused = on; },
   begin: me => { me.look = SAVE().looks[me.team]; prepViews(G.ents); beginMatch({ kind:'solo', tut:true, meId: me.id, side: me.team, ents: () => G.ents, state: () => G }); },
 });
-function startTutorial(){ initAudio(); tryLock(); TUT.start(); }
+function startTutorial(){ initAudio(); tryLock(); TUT.start(); PT_TRACK('tutorial-start'); }
 $('tutPlay').onclick = () => { show('tutEnd', false); TUT.stop(); startSolo(SAVE().side); };
 $('tutHome').onclick = () => { show('tutEnd', false); TUT.stop(); goHome(); };
 $('tutSkip').onclick = () => { TUT.stop(); goHome(); };
@@ -561,6 +561,7 @@ function startSolo(side, night){
   tryLock();
   initAudio();
   const map = pickMap(); useMap(map);
+  PT_TRACK('solo-game'); PT_TAG('mode', 'solo'); PT_TAG('map', map);
   newMatch({ slots:[{ team:side, ctrl:'local', name:SAVE().name }], night, diff: M.soloDifficulty(), map });
   const me = G.ents.find(e => e.ctrl==='local');
   me.look = SAVE().looks[me.team];
@@ -624,6 +625,7 @@ function remoteInput(e){
 let guest = null;
 function startMirror(roster, gid, isMine, snap, src, map){
   useMap(map);
+  PT_TRACK('online-game'); PT_TAG('mode', 'online'); PT_TAG('map', map);
   const ents = roster.map(([id,team,name,look,peer]) => ({ id, team, name:String(name).slice(0,16), look: look ? sanitizeLook(look) : M.randomLook(team), peer,
     x:0,y:0,fx:0,fy:1,state:'free',speed:0,wallet:0,stats:{caps:0,rescues:0,escaped:0,caught:0,dodges:0,abil:0,goals:0,cash:0,buys:0} }));
   const meE = typeof isMine==='number' ? ents[isMine] : ents.find(isMine);

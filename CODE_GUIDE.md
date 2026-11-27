@@ -110,6 +110,7 @@ Keep a copy of a file before a big edit. The `_previous_version` folder already 
 | Start the game sideways by default | `js/meta.js` line 148 | `orient:'landscape'`; see section 9.3 |
 | Add a parked car or other solid prop | `js/world.js` line 68 | the `props:` list; see section 9.5 |
 | Change how often matches are at night | `js/sim.js` line 43 | `.3` means 30% |
+| Crash reports and player numbers | `config.js` (`sentry`, `goatcounter`), `js/monitor.js` | count something new with `PT_TRACK('name')` anywhere in the game |
 | Set up online play | `server/`, `config.js` | see section 9.1. `config.js` now points at https://police-thief-naija.onrender.com |
 | Restore purchases (packs and No-ads, by email) | `js/store.js` `restore`, `server/server.mjs` `restorePurchases` | which kinds can be restored: `RESTORABLE` in the server |
 

@@ -219,6 +219,7 @@
 <div id="rotate" class="hidden"><div class="ph">📱</div><p id="rotText">Turn your phone upright<br>to play</p><button class="btn ghost" id="rotSwitch">Play this way instead</button></div>
 
 <script src="./config.js" onerror="window.PT_CONFIG={}"></script>
+<script src="./js/monitor.js"></script>
 <script>
   // install / offline support, only on the game's own website
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !/claude/.test(location.hostname)) addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));

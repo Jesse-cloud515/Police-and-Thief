@@ -18,4 +18,10 @@ window.PT_CONFIG = {
   //   Use the pk_test_ key until everything works, then the pk_live_ key.
   //   The SECRET key never goes here; it goes on the server as PAYSTACK_SECRET.
   payments: { provider: 'none', publicKey: '' },
+  // Crash reports from players' phones go to Sentry (sentry.io). The dsn is safe to share.
+  sentry: { dsn: 'https://b9fc35fce4c7d32628a596f496d8b2a9@o4512505414025216.ingest.de.sentry.io/4512505441419344' },
+  // Player numbers on GoatCounter: put your code here, e.g. 'policethief' for policethief.goatcounter.com
+  goatcounter: '',
+  // Shown on crash reports so you know which version a player had. Change it with sw.js line 2.
+  version: '8.6',
 };
